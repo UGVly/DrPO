@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "strong-drpo"
+version = "0.1.0"
+description = "Clean DrPO and Draft training code for one-step text-to-image diffusion models."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "accelerate>=0.24,<2",
+    "diffusers>=0.20,<0.38",
+    "numpy>=1.24,<3",
+    "open-clip-torch>=2.20,<4",
+    "packaging>=23,<27",
+    "peft>=0.8,<0.20",
+    "pillow>=10,<13",
+    "safetensors>=0.4",
+    "tensorboard>=2.14,<3",
+    "torch==2.7.1",
+    "torchvision==0.22.1",
+    "tqdm>=4.66,<5",
+    "transformers>=4.35,<6",
+    "xformers==0.0.31.post1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "ruff>=0.6,<1",
+]
+
+[project.scripts]
+drpo-train = "drpo.training.sdturbo_lora:main"
+drpo-full-train = "drpo.training.sdturbo_full:main"
+sdxl-drpo-train = "drpo.methods.sdxl_drpo.trainer:main"
+sdxl-draft-train = "drpo.methods.sdxl_draft.trainer:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"

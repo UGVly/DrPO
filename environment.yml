@@ -1,0 +1,20 @@
+name: strong-drpo
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pytorch=2.7.1
+  - torchvision=0.22.1
+  - pytorch-cuda=12.6
+  - pip:
+      - -e ".[dev]"
+      - accelerate>=0.24,<2
+      - diffusers>=0.20,<0.38
+      - open-clip-torch>=2.20,<4
+      - peft>=0.8,<0.20
+      - tensorboard>=2.14,<3
+      - transformers>=4.35,<6
+      - xformers==0.0.31.post1
