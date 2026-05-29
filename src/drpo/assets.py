@@ -25,7 +25,7 @@ def required_assets(root: Path | None = None) -> list[AssetSpec]:
         AssetSpec("hps_openclip", root / "models" / "CLIP-ViT-H-14-laion2B-s32B-b79K" / "open_clip_pytorch_model.bin", "file"),
         AssetSpec("hpsv2", root / "models" / "HPSv2" / "HPS_v2_compressed.pt", "file"),
         AssetSpec("aesthetic_head", root / "models" / "Aesthetic" / "sac+logos+ava1-l14-linearMSE.pth", "file"),
-        AssetSpec("mae_latent_256", root / "drifting" / "mae_latent_256_torch.pth", "file"),
+        AssetSpec("mae_latent_256", root / "models" / "mae_latent_256_torch.pth", "file"),
     ]
 
 

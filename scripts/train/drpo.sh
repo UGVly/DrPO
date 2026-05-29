@@ -21,7 +21,7 @@ accelerate launch \
   --choice_model pickscore \
   --choice_score_normalize zscore \
   --output_dir "$PROJECT_ROOT"/outputs/drpo/online/pickscore_mae_default \
-  --drifting_mae_path "$PROJECT_ROOT"/drifting/mae_latent_256_torch.pth \
+  --drifting_mae_path "$PROJECT_ROOT"/models/mae_latent_256_torch.pth \
   --train_batch_size 1 \
   --gradient_accumulation_steps 8 \
   --dataloader_num_workers 2 \

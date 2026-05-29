@@ -20,7 +20,7 @@ accelerate launch \
   --eval_prompt_file "$PROJECT_ROOT"/data/prompts/pickapicv2_test_unique.txt \
   --choice_model pickscore \
   --output_dir "$PROJECT_ROOT"/outputs/drpo/online/full_default \
-  --drifting_mae_path "$PROJECT_ROOT"/drifting/mae_latent_256_torch.pth \
+  --drifting_mae_path "$PROJECT_ROOT"/models/mae_latent_256_torch.pth \
   --train_batch_size 1 \
   --gradient_accumulation_steps 8 \
   --batchsize_gen 24 \

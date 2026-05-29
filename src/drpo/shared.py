@@ -1459,7 +1459,7 @@ def parse_args():
     parser.add_argument(
         "--drifting_mae_path",
         type=str,
-        default=os.path.join(PROJECT_ROOT, "drifting", "mae_latent_256_torch.pth"),
+        default=os.path.join(PROJECT_ROOT, "models", "mae_latent_256_torch.pth"),
     )
     parser.add_argument("--drifting_feature_mode", type=str, default="single", choices=["single", "multi"])
     parser.add_argument("--drifting_feature_key", type=str, default="layer4_mean")

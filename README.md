@@ -48,7 +48,7 @@ models/CLIP-ViT-L-14/
 models/CLIP-ViT-H-14-laion2B-s32B-b79K/open_clip_pytorch_model.bin
 models/HPSv2/HPS_v2_compressed.pt
 models/Aesthetic/sac+logos+ava1-l14-linearMSE.pth
-drifting/mae_latent_256_torch.pth
+models/mae_latent_256_torch.pth
 data/prompts/pickapicv2_test_unique.txt
 data/pairs.jsonl
 ```
@@ -61,14 +61,14 @@ Download the latent MAE checkpoint from ModelScope:
 
 ```bash
 python -m pip install modelscope
-mkdir -p drifting
+mkdir -p models
 modelscope download \
   --model jiangzhou130v1/drpo-mae-latent-256 \
   mae_latent_256_torch.pth \
-  --local_dir drifting
+  --local_dir models
 ```
 
-The file is written to `drifting/mae_latent_256_torch.pth`. Its SHA256 checksum
+The file is written to `models/mae_latent_256_torch.pth`. Its SHA256 checksum
 is `4810249905d2882a41d5a0fe97ebac995af8918dbe121daa9871e5bc605445b1`.
 
 ## SDXL-Turbo Runs

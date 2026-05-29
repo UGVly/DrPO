@@ -168,7 +168,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--train_mode", choices=["offline", "online", "offline_distance"], default="online")
     parser.add_argument("--pairs_jsonl", default=str(root / "data" / "pairs.jsonl"))
     parser.add_argument("--prompt_file", default=str(root / "data" / "prompts" / "pickapicv2_test_unique.txt"))
-    parser.add_argument("--drifting_mae_path", default=str(root / "drifting" / "mae_latent_256_torch.pth"))
+    parser.add_argument("--drifting_mae_path", default=str(root / "models" / "mae_latent_256_torch.pth"))
     parser.add_argument("--drifting_feature_extractor", choices=["mae", "dino", "latent"], default="mae")
     parser.add_argument("--drifting_dino_model_name_or_path", default=str(root / "models" / "dinov2-base"))
     parser.add_argument("--drifting_dino_processor_name_or_path", default=None)
