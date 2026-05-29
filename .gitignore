@@ -41,3 +41,4 @@ scripts_backup_before_cleanup_*.tar.gz
 /remote_figures/
 /_NeurIPS__26__DrPO__Drifting_Preference_Optimization/
 /runtime/
+/modelscope_mae_upload/
