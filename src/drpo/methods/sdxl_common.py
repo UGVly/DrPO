@@ -9,6 +9,7 @@ import sys
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 import torch
 from accelerate import Accelerator
@@ -177,3 +178,91 @@ def save_unet_checkpoint(
             encoding="utf-8",
         )
     accelerator.wait_for_everyone()
+
+
+ScalarLogValue = torch.Tensor | float | int
+CheckpointFn = Callable[[Accelerator, object, object, Path, int, str], None]
+
+
+def _as_float(value: ScalarLogValue) -> float:
+    if torch.is_tensor(value):
+        return float(value.detach().cpu())
+    return float(value)
+
+
+def _float_log_payload(log_values: dict[str, ScalarLogValue]) -> dict[str, float]:
+    return {key: _as_float(value) for key, value in log_values.items()}
+
+
+def _format_postfix(value: torch.Tensor | float | str) -> str:
+    if isinstance(value, str):
+        return value
+    if torch.is_tensor(value):
+        value = float(value.detach().cpu())
+    return f"{float(value):.4f}"
+
+
+class TrainingStepCallbacks:
+    """Shared end-of-step logging, checkpointing, and stop handling."""
+
+    def __init__(
+        self,
+        *,
+        accelerator: Accelerator,
+        progress,
+        config,
+        output_dir: Path,
+        unet,
+        save_checkpoint: CheckpointFn,
+    ) -> None:
+        self.accelerator = accelerator
+        self.progress = progress
+        self.config = config
+        self.output_dir = output_dir
+        self.unet = unet
+        self.save_checkpoint = save_checkpoint
+
+    def finish_step(
+        self,
+        *,
+        step: int,
+        loss: torch.Tensor,
+        lr: float,
+        log_values: dict[str, ScalarLogValue],
+        postfix: dict[str, torch.Tensor | float | str] | None = None,
+    ) -> tuple[int, bool]:
+        if not self.accelerator.sync_gradients:
+            return step, False
+
+        step += 1
+        values = {
+            "train_loss": loss.detach(),
+            "lr": torch.tensor(lr, device=self.accelerator.device),
+            **log_values,
+        }
+        self.accelerator.log(_float_log_payload(values), step=step)
+        self.progress.update(1)
+        self.progress.set_postfix(**{key: _format_postfix(value) for key, value in (postfix or {"loss": loss.detach()}).items()})
+
+        checkpointing_steps = int(getattr(self.config, "checkpointing_steps", 0))
+        if checkpointing_steps > 0 and step % checkpointing_steps == 0:
+            self.save_checkpoint(
+                self.accelerator,
+                self.unet,
+                self.config,
+                self.output_dir / f"checkpoint-{step}",
+                step,
+                "intermediate",
+            )
+        return step, step >= int(self.config.max_train_steps)
+
+    def finish_training(self, step: int) -> None:
+        self.save_checkpoint(
+            self.accelerator,
+            self.unet,
+            self.config,
+            self.output_dir / "final",
+            step,
+            "final",
+        )
+        self.accelerator.end_training()

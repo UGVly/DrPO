@@ -172,11 +172,13 @@ def discover_manifests(samples_dir: Path) -> list[Path]:
 
 
 def resolve_requested_manifests(args, samples_dir: Path) -> list[Path]:
-    if args.manifest_list:
-        with Path(args.manifest_list).open("r", encoding="utf-8") as handle:
+    manifest_list = getattr(args, "manifest_list", None)
+    manifest = getattr(args, "manifest", None)
+    if manifest_list:
+        with Path(manifest_list).open("r", encoding="utf-8") as handle:
             return [Path(line.strip()) for line in handle if line.strip()]
-    if args.manifest:
-        return [Path(args.manifest)]
+    if manifest:
+        return [Path(manifest)]
     return discover_manifests(samples_dir)
 
 

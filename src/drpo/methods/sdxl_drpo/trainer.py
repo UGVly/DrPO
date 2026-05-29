@@ -4,11 +4,6 @@ import argparse
 import copy
 import json
 import logging
-import math
-import os
-import shlex
-import socket
-import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -18,12 +13,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from accelerate import Accelerator
-from accelerate.utils import ProjectConfiguration, set_seed
+from accelerate.utils import set_seed
 from diffusers import StableDiffusionXLPipeline
 from diffusers.optimization import get_scheduler
-from diffusers.utils.import_utils import is_xformers_available
-from packaging import version
-from peft import LoraConfig, PeftModel, get_peft_model
 from PIL import Image
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
@@ -50,6 +42,7 @@ from drpo.methods.sdxl_common import (
     save_runtime_snapshot,
     save_unet_checkpoint,
     setup_training_logging,
+    TrainingStepCallbacks,
     trainable_parameters,
 )
 from drpo.paths import project_root, require_local_path
@@ -857,6 +850,14 @@ def train(config: SDXLDrPOConfig) -> None:
 
     step = resume_global_step(config.resume_from_checkpoint)
     progress = tqdm(total=config.max_train_steps, initial=step, disable=not accelerator.is_local_main_process)
+    callbacks = TrainingStepCallbacks(
+        accelerator=accelerator,
+        progress=progress,
+        config=config,
+        output_dir=output_dir,
+        unet=pipe.unet,
+        save_checkpoint=_save_checkpoint,
+    )
     while step < config.max_train_steps:
         for batch in dataloader:
             if step >= config.max_train_steps:
@@ -1013,21 +1014,16 @@ def train(config: SDXLDrPOConfig) -> None:
                 lr_scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
 
-            if accelerator.sync_gradients:
-                step += 1
-                log_values = {"train_loss": loss.detach(), "lr": torch.tensor(lr_scheduler.get_last_lr()[0], device=accelerator.device)}
-                for key, values in logs.items():
-                    if values:
-                        log_values[key] = torch.stack(values).mean()
-                accelerator.log({key: float(value.detach().cpu()) for key, value in log_values.items()}, step=step)
-                progress.update(1)
-                progress.set_postfix(loss=f"{float(loss.detach().cpu()):.4f}")
-                if step % config.checkpointing_steps == 0:
-                    _save_checkpoint(accelerator, pipe.unet, config, output_dir / f"checkpoint-{step}", step, "intermediate")
-                if step >= config.max_train_steps:
-                    break
-    _save_checkpoint(accelerator, pipe.unet, config, output_dir / "final", step, "final")
-    accelerator.end_training()
+            log_values = {key: torch.stack(values).mean() for key, values in logs.items() if values}
+            step, should_stop = callbacks.finish_step(
+                step=step,
+                loss=loss,
+                lr=lr_scheduler.get_last_lr()[0],
+                log_values=log_values,
+            )
+            if should_stop:
+                break
+    callbacks.finish_training(step)
 
 
 def build_parser() -> argparse.ArgumentParser:
