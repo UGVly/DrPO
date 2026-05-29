@@ -84,17 +84,6 @@ bash scripts/train/sdxl_turbo_drpo_teacher.sh
 bash scripts/train/sdxl_turbo_draft.sh
 ```
 
-## SD-Turbo DrPO Entrypoints
-
-LoRA and full-UNet DrPO training use explicit entrypoints:
-
-```bash
-bash scripts/train/drpo.sh online
-bash scripts/train/drpo_full.sh online
-```
-
-Both entrypoints share `src/drpo/training/trainer.py`; only the adapter/full training mode is fixed by the entrypoint.
-
 ## Repository Hygiene
 
 For release preparation, keep only reusable code under `src/`, maintained launch

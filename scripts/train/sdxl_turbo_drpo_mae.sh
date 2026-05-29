@@ -27,6 +27,7 @@ accelerate launch \
   --max_train_steps 5000 \
   --gradient_accumulation_steps 8 \
   --learning_rate 1e-5 \
+  --lr_warmup_steps 0 \
   --mixed_precision bf16 \
   --checkpointing_steps 100 \
   --drifting_pos_weight 3000.0 \

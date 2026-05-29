@@ -15,15 +15,18 @@ if str(SRC) not in sys.path:
 
 class MethodLayoutTest(unittest.TestCase):
     def test_method_packages_exist(self):
-        for method in ("drpo", "draft", "dpo", "grpo", "neighbor_grpo", "sdxl_grpo", "spo", "vggflow"):
+        for method in ("draft", "dpo", "grpo", "neighbor_grpo", "sdxl_draft", "sdxl_drpo", "sdxl_grpo", "spo", "vggflow"):
             path = ROOT / "src" / "drpo" / "methods" / method / "__init__.py"
             self.assertTrue(path.is_file(), path)
 
     def test_train_scripts_exist(self):
-        for script in ("drpo", "draft", "dpo", "grpo", "sdxl_turbo_grpo", "spo", "vggflow"):
+        for script in ("draft", "dpo", "grpo", "sdxl_turbo_draft", "sdxl_turbo_drpo_mae", "sdxl_turbo_drpo_teacher", "sdxl_turbo_grpo", "spo", "vggflow"):
             path = ROOT / "scripts" / "train" / f"{script}.sh"
             self.assertTrue(path.is_file(), path)
         self.assertFalse((ROOT / "scripts" / "train" / "neighbor_grpo.sh").exists())
+        self.assertFalse((ROOT / "scripts" / "train" / "drpo.sh").exists())
+        self.assertFalse((ROOT / "scripts" / "train" / "drpo_full.sh").exists())
+        self.assertFalse((ROOT / "scripts" / "train" / "drpo-geneval.sh").exists())
 
     def test_baseline_implementations_are_outside_src(self):
         expected = {
@@ -46,6 +49,9 @@ class MethodLayoutTest(unittest.TestCase):
             "grpo": "src/drpo/methods/grpo/trainer.py",
             "spo": "src/drpo/methods/spo/trainer.py",
             "vggflow": "src/drpo/methods/vggflow/trainer.py",
+            "sdxl_turbo_draft": "src/drpo/methods/sdxl_draft/trainer.py",
+            "sdxl_turbo_drpo_mae": "src/drpo/methods/sdxl_drpo/trainer.py",
+            "sdxl_turbo_drpo_teacher": "src/drpo/methods/sdxl_drpo/trainer.py",
             "sdxl_turbo_grpo": "src/drpo/methods/sdxl_grpo/trainer.py",
         }
         for script, needle in expected.items():
@@ -72,18 +78,26 @@ class MethodLayoutTest(unittest.TestCase):
 
     def test_canonical_trainer_specs_resolve(self):
         for module in (
-            "drpo.methods.drpo.trainer",
-            "drpo.training.sdturbo_lora",
-            "drpo.training.sdturbo_full",
             "drpo.methods.draft.trainer",
             "drpo.methods.dpo.trainer",
             "drpo.methods.grpo.trainer",
             "drpo.methods.neighbor_grpo.trainer",
+            "drpo.methods.sdxl_draft.trainer",
+            "drpo.methods.sdxl_drpo.trainer",
             "drpo.methods.sdxl_grpo.trainer",
             "drpo.methods.spo.trainer",
             "drpo.methods.vggflow.trainer",
         ):
             self.assertIsNotNone(importlib.util.find_spec(module), module)
+
+    def test_legacy_sdturbo_training_stack_is_removed(self):
+        self.assertFalse((ROOT / "src" / "drpo" / "training" / "__init__.py").exists())
+        self.assertFalse((ROOT / "src" / "drpo" / "training" / "trainer.py").exists())
+        self.assertFalse((ROOT / "src" / "drpo" / "training" / "sdturbo_lora.py").exists())
+        self.assertFalse((ROOT / "src" / "drpo" / "training" / "sdturbo_full.py").exists())
+        self.assertFalse((ROOT / "src" / "drpo" / "config.py").exists())
+        self.assertFalse((ROOT / "src" / "drpo" / "methods" / "drpo" / "__init__.py").exists())
+        self.assertFalse((ROOT / "src" / "drpo" / "methods" / "drpo" / "trainer.py").exists())
 
 
 if __name__ == "__main__":

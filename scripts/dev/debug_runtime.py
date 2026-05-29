@@ -14,15 +14,15 @@ from drpo.sdturbo import load_sdturbo_components
 
 
 MODULES = (
-    "drpo.config",
     "drpo.data",
     "drpo.drift",
     "drpo.features",
     "drpo.paths",
     "drpo.rewards",
     "drpo.sdturbo",
-    "drpo.training.trainer",
-    "drpo.training.sdturbo_drpo",
+    "drpo.methods.sdxl_drpo.trainer",
+    "drpo.methods.sdxl_draft.trainer",
+    "drpo.methods.sdxl_grpo.trainer",
 )
 
 

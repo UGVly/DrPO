@@ -11,40 +11,18 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from drpo.config import DrPOConfig, parse_config
 from drpo.features import DirectLatentFeatureExtractor
-from drpo.training.trainer import _validate_config, compute_offline_distance_scores
 from drpo.utils.tensors import add_rank_selection_stats, select_disjoint_pref_indices, select_top_fraction_indices
 
 
-def minimal_config(**overrides) -> DrPOConfig:
-    values = dict(
-        pretrained_model_name_or_path="models/sd-turbo",
-        output_dir="outputs/test",
-        train_mode="online",
-        pairs_jsonl="data/pairs.jsonl",
-        prompt_file="data/prompts.txt",
-        drifting_mae_path="drifting/mae.pth",
-    )
-    values.update(overrides)
-    return DrPOConfig(**values)
-
-
 class TrainingSelectionConfigTest(unittest.TestCase):
-    def test_parser_defaults_match_current_online_training_budget(self):
-        config = parse_config([])
-        self.assertEqual(config.max_train_steps, 1000)
-        self.assertEqual(config.batchsize_gen, 24)
-        self.assertEqual(config.lr_warmup_steps, 0)
-        self.assertEqual(config.online_feature_top_fraction, 1.0)
-        self.assertEqual(config.num_pos_images, config.num_neg_images)
-
     def test_train_wrappers_use_fixed_core_budget(self):
         expected = {
-            "scripts/train/drpo.sh": ("--num_processes 4", "--gradient_accumulation_steps 8", "--max_train_steps 1000"),
             "scripts/train/draft.sh": ("--num_processes 4", "--gradient_accumulation_steps 8", "--max_train_steps 1000"),
             "scripts/train/dpo.sh": ("--num_processes 4", "--gradient_accumulation_steps 8", "--max_train_steps 1000"),
             "scripts/train/grpo.sh": ("--num_processes 8", "--gradient_accumulation_steps 4", "--max_train_steps 5000"),
+            "scripts/train/sdxl_turbo_drpo_mae.sh": ("--num_processes 8", "--gradient_accumulation_steps 8", "--max_train_steps 5000"),
+            "scripts/train/sdxl_turbo_drpo_teacher.sh": ("--num_processes 4", "--gradient_accumulation_steps 8", "--max_train_steps 5000"),
         }
         for relative, budget in expected.items():
             text = (ROOT / relative).read_text(encoding="utf-8")
@@ -54,21 +32,6 @@ class TrainingSelectionConfigTest(unittest.TestCase):
             self.assertIn("PROJECT_ROOT", text, relative)
             for disallowed in ("${MAX_TRAIN_STEPS", "${BATCHSIZE_GEN", "${LEARNING_RATE", "${RUN_NAME"):
                 self.assertNotIn(disallowed, text, relative)
-
-    def test_validate_accepts_default_online_anchor_counts(self):
-        _validate_config(minimal_config(batchsize_gen=24, num_pos_images=8, num_neg_images=8))
-
-    def test_validate_rejects_invalid_online_feature_fraction(self):
-        with self.assertRaisesRegex(ValueError, "online_feature_top_fraction"):
-            _validate_config(minimal_config(online_feature_top_fraction=0.0))
-        with self.assertRaisesRegex(ValueError, "online_feature_top_fraction"):
-            _validate_config(minimal_config(online_feature_top_fraction=1.01))
-
-    def test_validate_rejects_non_positive_anchor_counts(self):
-        with self.assertRaisesRegex(ValueError, "num_pos_images"):
-            _validate_config(minimal_config(num_pos_images=0))
-        with self.assertRaisesRegex(ValueError, "num_pos_images"):
-            _validate_config(minimal_config(num_neg_images=0))
 
     def test_select_top_fraction_keeps_all_for_one_point_zero(self):
         scores = torch.tensor([0.3, 0.9, 0.1, 0.7])
@@ -104,36 +67,6 @@ class TrainingSelectionConfigTest(unittest.TestCase):
         self.assertEqual(info["online_selected_pos_count"].item(), 1.0)
         self.assertEqual(info["online_selected_neg_count"].item(), 1.0)
         self.assertGreater(info["online_selected_score_gap"].item(), 0.0)
-
-    def test_offline_distance_separate_zscore_produces_finite_scores(self):
-        scores, info = compute_offline_distance_scores(
-            cand_feat_dict={"latent": torch.tensor([[[0.0, 0.0]], [[1.0, 1.0]], [[3.0, 3.0]]])},
-            pos_feat_dict={"latent": torch.tensor([[[0.0, 0.0]]])},
-            neg_feat_dict={"latent": torch.tensor([[[3.0, 3.0]]])},
-            feature_keys=("latent",),
-            score_mode="separate_zscore",
-            normalize="zscore",
-            aggregation="mean",
-            ref_reduction="mean",
-        )
-        self.assertEqual(tuple(scores.shape), (3,))
-        self.assertTrue(torch.isfinite(scores).all())
-        self.assertIn("offline_distance_score_std", info)
-
-    def test_offline_distance_cosine_softmax_diff_reports_cosine_terms(self):
-        scores, info = compute_offline_distance_scores(
-            cand_feat_dict={"latent": torch.eye(3).view(3, 1, 3)},
-            pos_feat_dict={"latent": torch.tensor([[[1.0, 0.0, 0.0]]])},
-            neg_feat_dict={"latent": torch.tensor([[[0.0, 0.0, 1.0]]])},
-            feature_keys=("latent",),
-            score_mode="cosine_softmax_diff",
-            normalize="none",
-            aggregation="sum",
-            ref_reduction="mean",
-        )
-        self.assertEqual(tuple(scores.shape), (3,))
-        self.assertIn("offline_distance_cos_pos_mean", info)
-        self.assertGreater(scores[0].item(), scores[2].item())
 
     def test_direct_latent_feature_extractor_exposes_default_feature_keys(self):
         extractor = DirectLatentFeatureExtractor(patch_pool_sizes=(2, 4), include_spatial_features=True)

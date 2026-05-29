@@ -4,9 +4,9 @@ Drifting Preference Optimization keeps the open-source surface deliberately shal
 
 ```text
 src/drpo/
-  config.py, data.py, rewards.py, drift.py, features.py
-  training/              # SD-Turbo DrPO LoRA/full trainers
-  methods/               # thin method entrypoints plus maintained SDXL trainers
+  data.py, rewards.py, drift.py, features.py
+  methods/               # baseline shims plus maintained SDXL trainers
+  methods/sdxl_common.py # shared SDXL training infrastructure
   utils/                 # tensor and selection helpers
 
 src/inference/           # sampling and metric code
@@ -25,11 +25,9 @@ figures, and copied PDFs are local artifacts and should stay out of git.
 
 ## Maintained Entrypoints
 
-SD-Turbo:
+SD-Turbo baselines:
 
 ```bash
-bash scripts/train/drpo.sh
-bash scripts/train/drpo_full.sh
 bash scripts/train/draft.sh
 bash scripts/train/dpo.sh
 bash scripts/train/grpo.sh
