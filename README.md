@@ -61,12 +61,15 @@ Download the latent MAE checkpoint from ModelScope:
 
 ```bash
 python -m pip install modelscope
-python scripts/download_mae_latent.py
+mkdir -p drifting
+modelscope download \
+  --model jiangzhou130v1/drpo-mae-latent-256 \
+  mae_latent_256_torch.pth \
+  --local_dir drifting
 ```
 
-The script writes `drifting/mae_latent_256_torch.pth` and verifies its SHA256
-checksum. The source repository is
-`jiangzhou130v1/drpo-mae-latent-256`.
+The file is written to `drifting/mae_latent_256_torch.pth`. Its SHA256 checksum
+is `4810249905d2882a41d5a0fe97ebac995af8918dbe121daa9871e5bc605445b1`.
 
 ## SDXL-Turbo Runs
 
