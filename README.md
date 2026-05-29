@@ -57,6 +57,17 @@ Paths can be overridden with environment variables such as
 `PRETRAINED_MODEL_PATH`, `PICKSCORE_MODEL_PATH`, `HPS_CKPT_PATH`,
 `AESTHETIC_CKPT_PATH`, `HPS_OPEN_CLIP_PRETRAINED_PATH`, and `PROMPT_FILE`.
 
+Download the latent MAE checkpoint from ModelScope:
+
+```bash
+python -m pip install modelscope
+python scripts/download_mae_latent.py
+```
+
+The script writes `drifting/mae_latent_256_torch.pth` and verifies its SHA256
+checksum. The source repository is
+`jiangzhou130v1/drpo-mae-latent-256`.
+
 ## SDXL-Turbo Runs
 
 SDXL-Turbo MAE-DrPO and Draft wrappers default to `LEARNING_RATE=1e-5`.
