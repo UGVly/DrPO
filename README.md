@@ -73,8 +73,8 @@ is `4810249905d2882a41d5a0fe97ebac995af8918dbe121daa9871e5bc605445b1`.
 
 ## SDXL-Turbo Runs
 
-SDXL-Turbo MAE-DrPO and Draft wrappers default to `LEARNING_RATE=1e-5`.
-The teacher U-Net feature DrPO wrapper defaults to `LEARNING_RATE=1e-6`.
+SDXL-Turbo MAE-DrPO, teacher U-Net DrPO, and Draft wrappers default to
+`LEARNING_RATE=1e-5`.
 The DrPO path has two feature backends: pixel MAE and frozen teacher U-Net hidden states.
 
 ```bash
