@@ -40,16 +40,16 @@ class TrainingSelectionConfigTest(unittest.TestCase):
         self.assertEqual(config.num_pos_images, config.num_neg_images)
 
     def test_train_wrappers_use_fixed_core_budget(self):
-        for relative in (
-            "scripts/train/drpo.sh",
-            "scripts/train/draft.sh",
-            "scripts/train/dpo.sh",
-            "scripts/train/grpo.sh",
-        ):
+        expected = {
+            "scripts/train/drpo.sh": ("--num_processes 4", "--gradient_accumulation_steps 8", "--max_train_steps 1000"),
+            "scripts/train/draft.sh": ("--num_processes 4", "--gradient_accumulation_steps 8", "--max_train_steps 1000"),
+            "scripts/train/dpo.sh": ("--num_processes 4", "--gradient_accumulation_steps 8", "--max_train_steps 1000"),
+            "scripts/train/grpo.sh": ("--num_processes 8", "--gradient_accumulation_steps 4", "--max_train_steps 5000"),
+        }
+        for relative, budget in expected.items():
             text = (ROOT / relative).read_text(encoding="utf-8")
-            self.assertIn("--num_processes 4", text, relative)
-            self.assertIn("--gradient_accumulation_steps 8", text, relative)
-            self.assertIn("--max_train_steps 1000", text, relative)
+            for flag in budget:
+                self.assertIn(flag, text, relative)
             self.assertIn("--lr_warmup_steps 0", text, relative)
             self.assertIn("PROJECT_ROOT", text, relative)
             for disallowed in ("${MAX_TRAIN_STEPS", "${BATCHSIZE_GEN", "${LEARNING_RATE", "${RUN_NAME"):
