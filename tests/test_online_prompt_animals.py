@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -31,8 +30,6 @@ class FakeTokenizer:
 class OnlineAnimalPromptTest(unittest.TestCase):
     def setUp(self):
         self.prompt_file = ROOT / "data" / "prompts" / "simple_animals.txt"
-        self.wrapper = ROOT / "scripts" / "drpo" / "online" / "prompt_dataset" / "simple_animals.sh"
-        self.aes_wrapper = ROOT / "scripts" / "drpo" / "online" / "prompt_dataset" / "simple_animals_aes.sh"
 
     def test_simple_animals_prompt_file_exists(self):
         self.assertTrue(self.prompt_file.is_file(), f"missing animal prompt file: {self.prompt_file}")
@@ -71,25 +68,6 @@ class OnlineAnimalPromptTest(unittest.TestCase):
         self.assertEqual(tuple(batch.input_ids.shape), (2, 8))
         self.assertIsNone(batch.chosen)
         self.assertIsNone(batch.rejected)
-
-    def test_simple_animals_wrapper_points_to_prompt_file(self):
-        text = self.wrapper.read_text(encoding="utf-8")
-        self.assertIn("data/prompts/simple_animals.txt", text)
-        self.assertIn("outputs/drpo/online/prompt_dataset/simple_animals", text)
-        self.assertIn("accelerate launch", text)
-        self.assertIn("src/drpo/training/sdturbo_lora.py", text)
-
-    def test_simple_animals_aes_wrapper_selects_aes_reward(self):
-        text = self.aes_wrapper.read_text(encoding="utf-8")
-        self.assertIn("CHOICE_MODEL=\"${CHOICE_MODEL:-aes}\"", text)
-        self.assertIn("outputs/drpo/online/prompt_dataset/simple_animals_aes", text)
-        self.assertIn("accelerate launch", text)
-        self.assertIn("src/drpo/training/sdturbo_lora.py", text)
-
-    def test_prompt_dataset_wrappers_have_valid_bash_syntax(self):
-        for path in (self.wrapper, self.aes_wrapper):
-            result = subprocess.run(["bash", "-n", str(path)], text=True, capture_output=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":

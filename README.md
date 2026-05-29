@@ -1,7 +1,8 @@
-# StrongDrPO
+# Drifting Preference Optimization
 
-StrongDrPO is the open-source training code for Drifting Preference Optimization
-(DrPO) on one-step text-to-image diffusion models.
+Drifting Preference Optimization (DrPO) provides compact training, inference,
+and evaluation code for preference optimization on one-step text-to-image
+diffusion models.
 
 The repository is intentionally small:
 
@@ -23,7 +24,7 @@ This repo is maintained with conda.
 
 ```bash
 conda env create -f environment.yml
-conda activate strong-drpo
+conda activate drpo
 pip install -e ".[dev]"
 ```
 
@@ -63,7 +64,7 @@ The teacher U-Net feature DrPO wrapper defaults to `LEARNING_RATE=1e-6`.
 The DrPO path has two feature backends: pixel MAE and frozen teacher U-Net hidden states.
 
 ```bash
-conda activate strong-drpo
+conda activate drpo
 bash scripts/train/sdxl_turbo_drpo_mae.sh
 bash scripts/train/sdxl_turbo_drpo_teacher.sh
 bash scripts/train/sdxl_turbo_draft.sh

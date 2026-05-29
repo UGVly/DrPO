@@ -164,6 +164,7 @@ class SDXLDrPOConfigTest(unittest.TestCase):
                 reference_features=features,
                 positive_features=features,
                 negative_features=features,
+                scores=torch.tensor([1.0, 0.0]),
                 config=config,
             )
         finally:

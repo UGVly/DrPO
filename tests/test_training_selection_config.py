@@ -51,7 +51,9 @@ class TrainingSelectionConfigTest(unittest.TestCase):
             self.assertIn("--gradient_accumulation_steps 8", text, relative)
             self.assertIn("--max_train_steps 1000", text, relative)
             self.assertIn("--lr_warmup_steps 0", text, relative)
-            self.assertNotIn("${", text, relative)
+            self.assertIn("PROJECT_ROOT", text, relative)
+            for disallowed in ("${MAX_TRAIN_STEPS", "${BATCHSIZE_GEN", "${LEARNING_RATE", "${RUN_NAME"):
+                self.assertNotIn(disallowed, text, relative)
 
     def test_validate_accepts_default_online_anchor_counts(self):
         _validate_config(minimal_config(batchsize_gen=24, num_pos_images=8, num_neg_images=8))

@@ -23,7 +23,13 @@ from inference.common import PromptRecord, build_tasks, sample_tasks
 from inference.metrics import dino_image_features, evaluate_core, read_jsonl
 
 
-@unittest.skipUnless(torch.cuda.is_available(), "CUDA is required for real GPU smoke tests.")
+RUN_REAL_GPU_SMOKE = os.environ.get("DRPO_RUN_REAL_GPU_SMOKE") == "1"
+
+
+@unittest.skipUnless(
+    RUN_REAL_GPU_SMOKE and torch.cuda.is_available(),
+    "set DRPO_RUN_REAL_GPU_SMOKE=1 and prepare local model assets for real GPU smoke tests.",
+)
 class RealGPUModelSmokeTest(unittest.TestCase):
     def tearDown(self):
         gc.collect()

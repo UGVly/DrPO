@@ -707,7 +707,7 @@ def evaluate_core(args) -> None:
     if torch.cuda.is_available() and str(args.device).startswith("cuda"):
         torch.backends.cudnn.benchmark = True
     device_obj = torch.device(args.device)
-    components = parse_component_list(args.components)
+    components = parse_component_list(getattr(args, "components", "all"))
     if "dino" in components:
         require_local_path(args.dino_model_path, description="DINO diversity model", must_be_file=False)
     manifests = resolve_requested_manifests(args, samples_dir)

@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "strong-drpo"
+name = "drpo"
 version = "0.1.0"
 description = "Clean DrPO and Draft training code for one-step text-to-image diffusion models."
 readme = "README.md"

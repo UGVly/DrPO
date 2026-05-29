@@ -1,6 +1,6 @@
 # Source Layout
 
-StrongDrPO keeps the open-source surface deliberately shallow.
+Drifting Preference Optimization keeps the open-source surface deliberately shallow.
 
 ```text
 src/drpo/

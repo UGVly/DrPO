@@ -1,4 +1,4 @@
-name: strong-drpo
+name: drpo
 channels:
   - conda-forge
 dependencies:
