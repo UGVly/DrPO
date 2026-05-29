@@ -27,13 +27,20 @@ from drpo.data import Batch, PromptDataset, collate_preference_batch
 from drpo.methods.sdxl_drpo.trainer import (
     _decode_latents_to_tensor,
     _encode_prompts,
-    _make_trainable,
-    _maybe_enable_xformers,
-    _parse_names,
-    _resolve_unet_lora_dir,
-    _resume_global_step,
     _sdxl_one_step_latents,
-    _trainable_parameters,
+)
+from drpo.methods.sdxl_common import (
+    create_accelerator,
+    dtype_for_mixed_precision,
+    make_lora_trainable,
+    maybe_enable_xformers,
+    parse_names,
+    resolve_unet_lora_dir,
+    resume_global_step,
+    save_runtime_snapshot,
+    save_unet_checkpoint,
+    setup_training_logging,
+    trainable_parameters,
 )
 from drpo.paths import project_root, require_local_path
 
@@ -86,11 +93,7 @@ class SDXLDraftConfig:
 
 
 def _dtype_for(config: SDXLDraftConfig) -> torch.dtype:
-    if config.mixed_precision == "bf16":
-        return torch.bfloat16
-    if config.mixed_precision == "fp16":
-        return torch.float16
-    return torch.float32
+    return dtype_for_mixed_precision(config.mixed_precision)
 
 
 def _validate_config(config: SDXLDraftConfig) -> None:
@@ -111,17 +114,7 @@ def _validate_config(config: SDXLDraftConfig) -> None:
 
 
 def _setup_logging(config: SDXLDraftConfig, accelerator: Accelerator) -> None:
-    log_dir = Path(config.output_dir) / config.logging_dir
-    log_dir.mkdir(parents=True, exist_ok=True)
-    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
-    if accelerator.is_main_process:
-        handlers.append(logging.FileHandler(log_dir / "train.log", encoding="utf-8"))
-    logging.basicConfig(
-        level=logging.INFO if accelerator.is_local_main_process else logging.WARNING,
-        format=f"%(asctime)s | %(levelname)s | rank={accelerator.process_index}/{accelerator.num_processes} | %(name)s | %(message)s",
-        handlers=handlers,
-        force=True,
-    )
+    setup_training_logging(config, accelerator, logger_name=__name__)
 
 
 def _safe_tracker_config(config: SDXLDraftConfig) -> dict[str, object]:
@@ -137,57 +130,23 @@ def _safe_tracker_config(config: SDXLDraftConfig) -> dict[str, object]:
 
 
 def _save_runtime_snapshot(config: SDXLDraftConfig, accelerator: Accelerator) -> None:
-    if not accelerator.is_main_process:
-        return
-    out = Path(config.output_dir) / "run_metadata"
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "resolved_config.json").write_text(
-        json.dumps(asdict(config), indent=2, ensure_ascii=False, sort_keys=True),
-        encoding="utf-8",
-    )
-    runtime = {
-        "created_at": datetime.now().isoformat(),
-        "hostname": socket.gethostname(),
-        "cwd": os.getcwd(),
-        "python_executable": sys.executable,
-        "world_size": accelerator.num_processes,
-        "device": str(accelerator.device),
-        "torch_version": torch.__version__,
-    }
-    (out / "runtime_info.json").write_text(json.dumps(runtime, indent=2, sort_keys=True), encoding="utf-8")
-    (out / "launch_command.sh").write_text(
-        "#!/usr/bin/env bash\n" + shlex.join([sys.executable, *sys.argv]) + "\n",
-        encoding="utf-8",
-    )
+    save_runtime_snapshot(config, accelerator)
 
 
 def _save_checkpoint(accelerator: Accelerator, unet, config: SDXLDraftConfig, checkpoint_dir: Path, global_step: int, checkpoint_type: str) -> None:
-    if accelerator.is_main_process:
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    accelerator.wait_for_everyone()
-    if accelerator.is_main_process:
-        unwrapped = accelerator.unwrap_model(unet)
-        if config.use_lora:
-            unwrapped.save_pretrained(checkpoint_dir / "unet_lora")
-        else:
-            unwrapped.save_pretrained(checkpoint_dir / "unet")
-        metadata = {
-            "checkpoint_type": checkpoint_type,
-            "global_step": global_step,
-            "created_at": datetime.now().isoformat(),
+    save_unet_checkpoint(
+        accelerator,
+        unet,
+        config,
+        checkpoint_dir,
+        global_step=global_step,
+        checkpoint_type=checkpoint_type,
+        metadata={
             "model_type": "sdxl-turbo-draft-pickscore",
-            "contains_accelerate_state": False,
-            "contains_model_state": True,
-            "model_variant": config.model_variant,
-            "pretrained_model_name_or_path": config.pretrained_model_name_or_path,
             "choice_model": config.choice_model,
             "pickscore_model_name_or_path": config.pickscore_model_name_or_path,
-        }
-        (checkpoint_dir / "training_state.json").write_text(
-            json.dumps(metadata, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
-    accelerator.wait_for_everyone()
+        },
+    )
 
 
 def _load_pickscore(config: SDXLDraftConfig, device: torch.device) -> DifferentiablePickScoreScorer:
@@ -211,12 +170,7 @@ def train(config: SDXLDraftConfig) -> None:
     _validate_config(config)
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    accelerator = Accelerator(
-        gradient_accumulation_steps=config.gradient_accumulation_steps,
-        mixed_precision=None if config.mixed_precision == "no" else config.mixed_precision,
-        log_with=config.report_to,
-        project_config=ProjectConfiguration(project_dir=str(output_dir), logging_dir=str(output_dir / config.logging_dir)),
-    )
+    accelerator = create_accelerator(config, output_dir)
     _setup_logging(config, accelerator)
     if config.seed is not None:
         set_seed(config.seed + accelerator.process_index)
@@ -232,11 +186,11 @@ def train(config: SDXLDraftConfig) -> None:
     pipe.text_encoder_2.requires_grad_(False).eval()
     pipe.vae.requires_grad_(False).eval()
 
-    pipe.unet = _make_trainable(pipe.unet, config)
+    pipe.unet = make_lora_trainable(pipe.unet, config)
     reference_unet = None if config.use_lora else copy.deepcopy(pipe.unet).eval().requires_grad_(False)
     if hasattr(pipe.unet, "enable_gradient_checkpointing"):
         pipe.unet.enable_gradient_checkpointing()
-    _maybe_enable_xformers(pipe.unet)
+    maybe_enable_xformers(pipe.unet, logger)
 
     dataset = PromptDataset(config.prompt_file, pipe.tokenizer, max_samples=config.max_train_samples, seed=config.seed)
     dataloader = DataLoader(
@@ -248,7 +202,7 @@ def train(config: SDXLDraftConfig) -> None:
         drop_last=True,
     )
     optimizer = torch.optim.AdamW(
-        _trainable_parameters(pipe.unet),
+        trainable_parameters(pipe.unet),
         lr=config.learning_rate,
         betas=(config.adam_beta1, config.adam_beta2),
         weight_decay=config.adam_weight_decay,
@@ -288,13 +242,13 @@ def train(config: SDXLDraftConfig) -> None:
 
     if accelerator.is_main_process:
         accelerator.init_trackers("sdxl-turbo-draft", _safe_tracker_config(config))
-        trainable = sum(parameter.numel() for parameter in _trainable_parameters(accelerator.unwrap_model(pipe.unet)))
+        trainable = sum(parameter.numel() for parameter in trainable_parameters(accelerator.unwrap_model(pipe.unet)))
         logger.info("Starting SDXL-Draft training with %d trainable parameters.", trainable)
         logger.info("Output dir: %s", output_dir)
         if config.resume_from_checkpoint:
-            logger.info("Resumed LoRA from %s", _resolve_unet_lora_dir(config.resume_from_checkpoint))
+            logger.info("Resumed LoRA from %s", resolve_unet_lora_dir(config.resume_from_checkpoint))
 
-    step = _resume_global_step(config.resume_from_checkpoint)
+    step = resume_global_step(config.resume_from_checkpoint)
     progress = tqdm(total=config.max_train_steps, initial=step, disable=not accelerator.is_local_main_process)
     while step < config.max_train_steps:
         for batch in dataloader:
@@ -374,7 +328,7 @@ def train(config: SDXLDraftConfig) -> None:
                     optimizer.zero_grad(set_to_none=True)
                     continue
                 if accelerator.sync_gradients:
-                    accelerator.clip_grad_norm_(_trainable_parameters(pipe.unet), config.max_grad_norm)
+                    accelerator.clip_grad_norm_(trainable_parameters(pipe.unet), config.max_grad_norm)
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
@@ -491,7 +445,7 @@ def parse_config(argv: list[str] | None = None) -> SDXLDraftConfig:
         lora_r=args.lora_r,
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
-        lora_target_modules=_parse_names(args.lora_target_modules),
+        lora_target_modules=parse_names(args.lora_target_modules),
         pickscore_loss_weight=args.pickscore_loss_weight,
         ref_model_l2_weight=args.ref_model_l2_weight,
         score_std_weight=args.score_std_weight,

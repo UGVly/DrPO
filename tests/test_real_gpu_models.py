@@ -20,7 +20,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from inference.common import PromptRecord, build_tasks, sample_tasks
-from inference.metrics import dino_image_features, evaluate_core, read_jsonl
+from inference.metrics import evaluate_core, read_jsonl
 
 
 RUN_REAL_GPU_SMOKE = os.environ.get("DRPO_RUN_REAL_GPU_SMOKE") == "1"
@@ -54,7 +54,6 @@ class RealGPUModelSmokeTest(unittest.TestCase):
         self._assert_cuda_ready()
         required = [
             ROOT / "models" / "sd-turbo" / "unet" / "diffusion_pytorch_model.safetensors",
-            ROOT / "models" / "dinov2-base" / "model.safetensors",
             ROOT / "models" / "PickScore_v1" / "model.safetensors",
             ROOT / "models" / "CLIP-ViT-L-14" / "model.safetensors",
             ROOT / "models" / "Aesthetic" / "sac+logos+ava1-l14-linearMSE.pth",
@@ -85,26 +84,7 @@ class RealGPUModelSmokeTest(unittest.TestCase):
                 self.assertEqual(image.mode, "RGB")
                 self.assertEqual(image.size, (64, 64))
 
-    def test_real_dino_features_run_on_cuda(self):
-        self._assert_cuda_ready()
-        with tempfile.TemporaryDirectory(prefix="drpo_dino_smoke_") as tmp:
-            root = Path(tmp)
-            rows = []
-            for index, color in enumerate(((255, 0, 0), (0, 0, 255))):
-                image_path = root / f"image_{index}.png"
-                self._write_image(image_path, color)
-                rows.append({"prompt": f"prompt {index}", "seed": 42, "image_path": str(image_path)})
-            features = dino_image_features(
-                rows,
-                device="cuda",
-                batch_size=2,
-                num_workers=0,
-                model_path=ROOT / "models" / "dinov2-base",
-            )
-            self.assertEqual(features.shape[0], 2)
-            self.assertTrue(torch.isfinite(features).all())
-
-    def test_real_core_metrics_generates_scores_summary_and_fid_on_cuda(self):
+    def test_real_core_metrics_generates_reward_summary_on_cuda(self):
         self._assert_cuda_ready()
         with tempfile.TemporaryDirectory(prefix="drpo_metrics_smoke_") as tmp:
             root = Path(tmp)
@@ -152,15 +132,10 @@ class RealGPUModelSmokeTest(unittest.TestCase):
                 baseline_manifest=str(baseline_manifest),
                 device="cuda",
                 reward_batch_size=2,
-                feature_batch_size=2,
-                fid_batch_size=2,
                 num_workers=0,
                 prefetch_factor=2,
                 cache_dir=str(metrics_dir / ".cache"),
                 no_feature_cache=False,
-                dino_model_path=str(ROOT / "models" / "dinov2-base"),
-                dino_processor_path=None,
-                dino_feature_key="layer12_patch_mean",
                 force=True,
             )
             evaluate_core(args)
@@ -169,7 +144,7 @@ class RealGPUModelSmokeTest(unittest.TestCase):
             self.assertTrue(summary_path.is_file())
             self.assertTrue(scores_path.is_file())
             summary = json.loads(summary_path.read_text(encoding="utf-8"))
-            for key in ("pickscore_mean", "clip_mean", "aes_mean", "hpsv2_mean", "clip_diversity", "dino_diversity", "fid_vs_baseline"):
+            for key in ("pickscore_mean", "clip_mean", "aes_mean", "hpsv2_mean"):
                 self.assertIn(key, summary)
                 self.assertTrue(isinstance(summary[key], (int, float)))
             rows = read_jsonl(scores_path)

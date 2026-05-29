@@ -39,6 +39,19 @@ from drpo.drift import (
     reward_topk_contrastive_kernel_drift_loss,
     reward_topk_weighted_binary_drift_loss,
 )
+from drpo.methods.sdxl_common import (
+    create_accelerator,
+    dtype_for_mixed_precision,
+    make_lora_trainable,
+    maybe_enable_xformers,
+    parse_floats,
+    parse_names,
+    resume_global_step,
+    save_runtime_snapshot,
+    save_unet_checkpoint,
+    setup_training_logging,
+    trainable_parameters,
+)
 from drpo.paths import project_root, require_local_path
 from drpo.rewards import build_choice_selectors, resolve_choice_model_weights, resolve_choice_models, score_reward_ensemble
 from drpo.utils.tensors import add_rank_selection_stats, safe_std, select_disjoint_pref_indices
@@ -123,13 +136,11 @@ class SDXLDrPOConfig:
 
 
 def _parse_names(value: str | None) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    return tuple(item.strip() for item in value.split(",") if item.strip())
+    return parse_names(value)
 
 
 def _parse_floats(value: str) -> tuple[float, ...]:
-    return tuple(float(item.strip()) for item in value.split(",") if item.strip())
+    return parse_floats(value)
 
 
 def _parse_ints(value: str) -> tuple[int, ...]:
@@ -322,11 +333,7 @@ class SDXLTeacherUNetFeatureExtractor(nn.Module):
 
 
 def _dtype_for(config: SDXLDrPOConfig) -> torch.dtype:
-    if config.mixed_precision == "bf16":
-        return torch.bfloat16
-    if config.mixed_precision == "fp16":
-        return torch.float16
-    return torch.float32
+    return dtype_for_mixed_precision(config.mixed_precision)
 
 
 def _decode_latents_to_tensor(vae, latents: torch.Tensor, *, chunk_size: int) -> torch.Tensor:
@@ -503,35 +510,15 @@ def _resume_global_step(path: str | Path | None) -> int:
 
 
 def _make_trainable(unet, config: SDXLDrPOConfig):
-    if not config.use_lora:
-        unet.requires_grad_(True)
-        return unet
-    if config.resume_from_checkpoint:
-        return PeftModel.from_pretrained(unet, str(_resolve_unet_lora_dir(config.resume_from_checkpoint)), is_trainable=True)
-    lora_config = LoraConfig(
-        r=config.lora_r,
-        lora_alpha=config.lora_alpha,
-        lora_dropout=config.lora_dropout,
-        target_modules=list(config.lora_target_modules),
-    )
-    return get_peft_model(unet, lora_config)
+    return make_lora_trainable(unet, config)
 
 
 def _trainable_parameters(model) -> list[torch.nn.Parameter]:
-    return [parameter for parameter in model.parameters() if parameter.requires_grad]
+    return trainable_parameters(model)
 
 
 def _maybe_enable_xformers(unet) -> None:
-    if not is_xformers_available():
-        return
-    import xformers
-
-    if version.parse(xformers.__version__) < version.parse("0.0.17"):
-        return
-    try:
-        unet.enable_xformers_memory_efficient_attention()
-    except Exception as exc:
-        logger.warning("Could not enable xformers: %s", exc)
+    maybe_enable_xformers(unet, logger)
 
 
 def _compute_prompt_terms(
@@ -687,19 +674,14 @@ def _compute_prompt_terms(
 
 
 def _save_checkpoint(accelerator: Accelerator, unet, config: SDXLDrPOConfig, checkpoint_dir: Path, global_step: int, checkpoint_type: str) -> None:
-    if accelerator.is_main_process:
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    accelerator.wait_for_everyone()
-    if accelerator.is_main_process:
-        unwrapped = accelerator.unwrap_model(unet)
-        if config.use_lora:
-            unwrapped.save_pretrained(checkpoint_dir / "unet_lora")
-        else:
-            unwrapped.save_pretrained(checkpoint_dir / "unet")
-        metadata = {
-            "checkpoint_type": checkpoint_type,
-            "global_step": global_step,
-            "created_at": datetime.now().isoformat(),
+    save_unet_checkpoint(
+        accelerator,
+        unet,
+        config,
+        checkpoint_dir,
+        global_step=global_step,
+        checkpoint_type=checkpoint_type,
+        metadata={
             "model_type": f"sdxl-turbo-drpo-{config.feature_extractor}",
             "feature_extractor": config.feature_extractor,
             "drifting_objective": config.drifting_objective,
@@ -712,48 +694,17 @@ def _save_checkpoint(accelerator: Accelerator, unet, config: SDXLDrPOConfig, che
             "vgg_anchor_alpha": config.vgg_anchor_alpha,
             "vgg_anchor_advantage_clip": config.vgg_anchor_advantage_clip,
             "vgg_anchor_min_score_weight": config.vgg_anchor_min_score_weight,
-            "contains_accelerate_state": False,
-            "contains_model_state": True,
-            "model_variant": config.model_variant,
-            "pretrained_model_name_or_path": config.pretrained_model_name_or_path,
             "mae_model_name_or_path": config.mae_model_name_or_path,
-        }
-        (checkpoint_dir / "training_state.json").write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
-    accelerator.wait_for_everyone()
-
-
-def _setup_logging(config: SDXLDrPOConfig, accelerator: Accelerator) -> None:
-    log_dir = Path(config.output_dir) / config.logging_dir
-    log_dir.mkdir(parents=True, exist_ok=True)
-    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
-    if accelerator.is_main_process:
-        handlers.append(logging.FileHandler(log_dir / "train.log", encoding="utf-8"))
-    logging.basicConfig(
-        level=logging.INFO if accelerator.is_local_main_process else logging.WARNING,
-        format=f"%(asctime)s | %(levelname)s | rank={accelerator.process_index}/{accelerator.num_processes} | %(name)s | %(message)s",
-        handlers=handlers,
-        force=True,
+        },
     )
 
 
+def _setup_logging(config: SDXLDrPOConfig, accelerator: Accelerator) -> None:
+    setup_training_logging(config, accelerator, logger_name=__name__)
+
+
 def _save_runtime_snapshot(config: SDXLDrPOConfig, accelerator: Accelerator) -> None:
-    if not accelerator.is_main_process:
-        return
-    out = Path(config.output_dir) / "run_metadata"
-    out.mkdir(parents=True, exist_ok=True)
-    safe_config = asdict(config)
-    (out / "resolved_config.json").write_text(json.dumps(safe_config, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-    runtime = {
-        "created_at": datetime.now().isoformat(),
-        "hostname": socket.gethostname(),
-        "cwd": os.getcwd(),
-        "python_executable": sys.executable,
-        "world_size": accelerator.num_processes,
-        "device": str(accelerator.device),
-        "torch_version": torch.__version__,
-    }
-    (out / "runtime_info.json").write_text(json.dumps(runtime, indent=2, sort_keys=True), encoding="utf-8")
-    (out / "launch_command.sh").write_text("#!/usr/bin/env bash\n" + shlex.join([sys.executable, *sys.argv]) + "\n", encoding="utf-8")
+    save_runtime_snapshot(config, accelerator)
 
 
 def _validate_config(config: SDXLDrPOConfig) -> None:
@@ -806,12 +757,7 @@ def train(config: SDXLDrPOConfig) -> None:
     _validate_config(config)
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    accelerator = Accelerator(
-        gradient_accumulation_steps=config.gradient_accumulation_steps,
-        mixed_precision=None if config.mixed_precision == "no" else config.mixed_precision,
-        log_with=config.report_to,
-        project_config=ProjectConfiguration(project_dir=str(output_dir), logging_dir=str(output_dir / config.logging_dir)),
-    )
+    accelerator = create_accelerator(config, output_dir)
     _setup_logging(config, accelerator)
     if config.seed is not None:
         set_seed(config.seed + accelerator.process_index)
@@ -909,7 +855,7 @@ def train(config: SDXLDrPOConfig) -> None:
     if accelerator.is_main_process:
         accelerator.init_trackers("sdxl-turbo-drpo", {key: json.dumps(value) if isinstance(value, (list, tuple)) else value for key, value in asdict(config).items()})
 
-    step = _resume_global_step(config.resume_from_checkpoint)
+    step = resume_global_step(config.resume_from_checkpoint)
     progress = tqdm(total=config.max_train_steps, initial=step, disable=not accelerator.is_local_main_process)
     while step < config.max_train_steps:
         for batch in dataloader:

@@ -32,9 +32,21 @@ from drpo.data import Batch, PromptDataset, collate_preference_batch
 from drpo.methods.sdxl_drpo.trainer import (
     _decode_latents_to_tensor,
     _encode_prompts,
-    _maybe_enable_xformers,
     _sdxl_one_step_latents,
     _tensor_to_pil,
+)
+from drpo.methods.sdxl_common import (
+    create_accelerator,
+    dtype_for_mixed_precision,
+    make_lora_trainable,
+    maybe_enable_xformers,
+    parse_floats,
+    parse_names,
+    resume_global_step,
+    save_runtime_snapshot,
+    save_unet_checkpoint,
+    setup_training_logging,
+    trainable_parameters,
 )
 from drpo.paths import project_root, require_local_path
 from drpo.rewards import build_choice_selectors, resolve_choice_model_weights, resolve_choice_models
@@ -103,21 +115,15 @@ class SDXLGRPOConfig:
 
 
 def _parse_names(value: str | None) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    return tuple(item.strip() for item in value.split(",") if item.strip())
+    return parse_names(value)
 
 
 def _parse_floats(value: str) -> tuple[float, ...]:
-    return tuple(float(item.strip()) for item in value.split(",") if item.strip())
+    return parse_floats(value)
 
 
 def _dtype_for(config: SDXLGRPOConfig) -> torch.dtype:
-    if config.mixed_precision == "bf16":
-        return torch.bfloat16
-    if config.mixed_precision == "fp16":
-        return torch.float16
-    return torch.float32
+    return dtype_for_mixed_precision(config.mixed_precision)
 
 
 def validate_neighbor_sigma(sigma: float) -> None:
@@ -289,81 +295,31 @@ def _resume_global_step(path: str | Path | None) -> int:
 
 
 def _make_trainable(unet, config: SDXLGRPOConfig):
-    if not config.use_lora:
-        unet.requires_grad_(True)
-        return unet
-    if config.resume_from_checkpoint:
-        return PeftModel.from_pretrained(unet, str(_resolve_unet_lora_dir(config.resume_from_checkpoint)), is_trainable=True)
-    unet.requires_grad_(False)
-    lora_config = LoraConfig(
-        r=config.lora_r,
-        lora_alpha=config.lora_alpha,
-        lora_dropout=config.lora_dropout,
-        target_modules=list(config.lora_target_modules),
-    )
-    return get_peft_model(unet, lora_config)
+    return make_lora_trainable(unet, config)
 
 
 def _trainable_parameters(model) -> list[torch.nn.Parameter]:
-    return [parameter for parameter in model.parameters() if parameter.requires_grad]
+    return trainable_parameters(model)
 
 
 def _save_checkpoint(accelerator: Accelerator, unet, config: SDXLGRPOConfig, checkpoint_dir: Path, global_step: int, checkpoint_type: str) -> None:
-    if accelerator.is_main_process:
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    accelerator.wait_for_everyone()
-    if accelerator.is_main_process:
-        unwrapped = accelerator.unwrap_model(unet)
-        if config.use_lora:
-            unwrapped.save_pretrained(checkpoint_dir / "unet_lora")
-        else:
-            unwrapped.save_pretrained(checkpoint_dir / "unet")
-        metadata = {
-            "checkpoint_type": checkpoint_type,
-            "global_step": global_step,
-            "created_at": datetime.now().isoformat(),
-            "model_type": "sdxl-turbo-grpo-neighbor",
-            "contains_accelerate_state": False,
-            "contains_model_state": True,
-            "model_variant": config.model_variant,
-            "pretrained_model_name_or_path": config.pretrained_model_name_or_path,
-        }
-        (checkpoint_dir / "training_state.json").write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
-    accelerator.wait_for_everyone()
-
-
-def _setup_logging(config: SDXLGRPOConfig, accelerator: Accelerator) -> None:
-    log_dir = Path(config.output_dir) / config.logging_dir
-    log_dir.mkdir(parents=True, exist_ok=True)
-    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
-    if accelerator.is_main_process:
-        handlers.append(logging.FileHandler(log_dir / "train.log", encoding="utf-8"))
-    logging.basicConfig(
-        level=logging.INFO if accelerator.is_local_main_process else logging.WARNING,
-        format=f"%(asctime)s | %(levelname)s | rank={accelerator.process_index}/{accelerator.num_processes} | %(name)s | %(message)s",
-        handlers=handlers,
-        force=True,
+    save_unet_checkpoint(
+        accelerator,
+        unet,
+        config,
+        checkpoint_dir,
+        global_step=global_step,
+        checkpoint_type=checkpoint_type,
+        metadata={"model_type": "sdxl-turbo-grpo-neighbor"},
     )
 
 
+def _setup_logging(config: SDXLGRPOConfig, accelerator: Accelerator) -> None:
+    setup_training_logging(config, accelerator, logger_name=__name__)
+
+
 def _save_runtime_snapshot(config: SDXLGRPOConfig, accelerator: Accelerator) -> None:
-    if not accelerator.is_main_process:
-        return
-    out = Path(config.output_dir) / "run_metadata"
-    out.mkdir(parents=True, exist_ok=True)
-    safe_config = asdict(config)
-    (out / "resolved_config.json").write_text(json.dumps(safe_config, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-    runtime = {
-        "created_at": datetime.now().isoformat(),
-        "hostname": socket.gethostname(),
-        "cwd": os.getcwd(),
-        "python_executable": sys.executable,
-        "world_size": accelerator.num_processes,
-        "device": str(accelerator.device),
-        "torch_version": torch.__version__,
-    }
-    (out / "runtime_info.json").write_text(json.dumps(runtime, indent=2, sort_keys=True), encoding="utf-8")
-    (out / "launch_command.sh").write_text("#!/usr/bin/env bash\n" + shlex.join([sys.executable, *sys.argv]) + "\n", encoding="utf-8")
+    save_runtime_snapshot(config, accelerator)
 
 
 def _validate_config(config: SDXLGRPOConfig) -> None:
@@ -775,12 +731,7 @@ def train(config: SDXLGRPOConfig) -> None:
     _validate_config(config)
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    accelerator = Accelerator(
-        gradient_accumulation_steps=config.gradient_accumulation_steps,
-        mixed_precision=None if config.mixed_precision == "no" else config.mixed_precision,
-        log_with=config.report_to,
-        project_config=ProjectConfiguration(project_dir=str(output_dir), logging_dir=str(output_dir / config.logging_dir)),
-    )
+    accelerator = create_accelerator(config, output_dir)
     _setup_logging(config, accelerator)
     if config.seed is not None:
         set_seed(config.seed + accelerator.process_index)
@@ -799,7 +750,7 @@ def train(config: SDXLGRPOConfig) -> None:
     pipe.unet = _make_trainable(pipe.unet, config)
     if hasattr(pipe.unet, "enable_gradient_checkpointing"):
         pipe.unet.enable_gradient_checkpointing()
-    _maybe_enable_xformers(pipe.unet)
+    maybe_enable_xformers(pipe.unet, logger)
 
     choice_models = resolve_choice_models(config.choice_models, config.choice_model)
     choice_model_weights = resolve_choice_model_weights(config.choice_model_weights, choice_models)
@@ -855,7 +806,7 @@ def train(config: SDXLGRPOConfig) -> None:
         tracker_config = {key: json.dumps(value) if isinstance(value, (list, tuple)) else value for key, value in asdict(config).items()}
         accelerator.init_trackers("sdxl-turbo-grpo", tracker_config)
 
-    step = _resume_global_step(config.resume_from_checkpoint)
+    step = resume_global_step(config.resume_from_checkpoint)
     reward_cache_call_index = 0
     progress = tqdm(total=config.max_train_steps, initial=step, disable=not accelerator.is_local_main_process)
     while step < config.max_train_steps:

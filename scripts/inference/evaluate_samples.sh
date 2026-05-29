@@ -12,6 +12,4 @@ python -m inference.metrics \
   --metrics-dir "$PROJECT_ROOT"/samples/metrics \
   --device cuda \
   --reward-batch-size 8 \
-  --feature-batch-size 16 \
-  --fid-batch-size 32 \
-  --dino-model-path "$PROJECT_ROOT"/models/dinov2-base
+  --components pickscore,clip_aes,hpsv2,summarize

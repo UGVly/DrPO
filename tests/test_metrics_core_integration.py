@@ -20,14 +20,11 @@ from inference.metrics import (
     build_summary,
     discover_manifests,
     feature_cache_path,
-    fid_from_features,
-    grouped_diversity,
     image_batch_to_tensor,
     image_tensor_loader,
     manifest_metric_dir,
     num_batches,
     open_images,
-    pairwise_cosine_distance_mean,
     read_jsonl,
     resolve_image_path,
     scalar_summary,
@@ -98,27 +95,11 @@ class MetricsCoreIntegrationTest(unittest.TestCase):
             root = Path(tmp)
             manifest = root / "manifest.jsonl"
             manifest.write_text('{"a": 1}\n', encoding="utf-8")
-            first = feature_cache_path(root / "cache", prefix="dino", manifest=manifest)
+            first = feature_cache_path(root / "cache", prefix="features", manifest=manifest)
             manifest.write_text('{"a": 1, "b": 2}\n', encoding="utf-8")
-            second = feature_cache_path(root / "cache", prefix="dino", manifest=manifest)
+            second = feature_cache_path(root / "cache", prefix="features", manifest=manifest)
             self.assertNotEqual(first, second)
-            self.assertTrue(first.name.startswith("dino-"))
-
-    def test_pairwise_cosine_distance_and_grouped_diversity(self):
-        features = torch.tensor([[1.0, 0.0], [0.0, 1.0], [1.0, 0.0]])
-        rows = [{"seed": 1}, {"seed": 1}, {"seed": 2}]
-        self.assertAlmostEqual(pairwise_cosine_distance_mean(features[:1]), 0.0)
-        global_value, per_seed = grouped_diversity(rows, features)
-        self.assertGreater(global_value, 0.0)
-        self.assertIn("1", per_seed)
-        self.assertIn("2", per_seed)
-        self.assertEqual(per_seed["2"], 0.0)
-
-    def test_fid_is_zero_for_identical_features_and_positive_for_shifted_features(self):
-        ref = torch.tensor([[0.0, 1.0], [1.0, 0.0], [0.5, 0.5]])
-        self.assertLess(fid_from_features(ref, ref), 1e-8)
-        shifted = ref + 2.0
-        self.assertGreater(fid_from_features(ref, shifted), 0.1)
+            self.assertTrue(first.name.startswith("features-"))
 
     def test_scalar_and_reward_summary(self):
         summary = build_summary(
