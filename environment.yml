@@ -5,6 +5,7 @@ dependencies:
   - python=3.11
   - pip
   - pip:
+      - --index-url=https://mirrors2.westlake.edu.cn/pypi/simple
       - -e ".[dev]"
       - accelerate>=0.24,<2
       - diffusers>=0.20,<0.38
