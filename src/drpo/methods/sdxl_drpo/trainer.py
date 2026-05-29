@@ -69,7 +69,7 @@ class SDXLDrPOConfig:
     seed: int = 42
     resolution: int = 512
     train_batch_size: int = 1
-    batchsize_gen: int = 8
+    batchsize_gen: int = 16
     num_inference_steps: int = 1
     guidance_scale: float = 0.0
     max_train_steps: int = 5000
@@ -121,8 +121,8 @@ class SDXLDrPOConfig:
     vgg_anchor_alpha: float = 1.0
     vgg_anchor_advantage_clip: float = 2.0
     vgg_anchor_min_score_weight: float = 0.0
-    num_pos_images: int = 2
-    num_neg_images: int = 2
+    num_pos_images: int = 8
+    num_neg_images: int = 8
     online_feature_top_fraction: float = 1.0
     vae_decode_chunk_size: int = 1
     mae_chunk_size: int = 4
@@ -1044,7 +1044,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--resolution", type=int, default=512)
     parser.add_argument("--train_batch_size", type=int, default=1)
-    parser.add_argument("--batchsize_gen", type=int, default=8)
+    parser.add_argument("--batchsize_gen", type=int, default=16)
     parser.add_argument("--num_inference_steps", type=int, default=1)
     parser.add_argument("--guidance_scale", type=float, default=0.0)
     parser.add_argument("--max_train_steps", type=int, default=5000)
@@ -1096,8 +1096,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--vgg_anchor_alpha", type=float, default=1.0)
     parser.add_argument("--vgg_anchor_advantage_clip", type=float, default=2.0)
     parser.add_argument("--vgg_anchor_min_score_weight", type=float, default=0.0)
-    parser.add_argument("--num_pos_images", type=int, default=2)
-    parser.add_argument("--num_neg_images", type=int, default=2)
+    parser.add_argument("--num_pos_images", type=int, default=8)
+    parser.add_argument("--num_neg_images", type=int, default=8)
     parser.add_argument("--online_feature_top_fraction", type=float, default=1.0)
     parser.add_argument("--vae_decode_chunk_size", type=int, default=1)
     parser.add_argument("--mae_chunk_size", type=int, default=4)

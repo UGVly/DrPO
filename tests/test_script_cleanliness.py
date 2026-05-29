@@ -41,9 +41,9 @@ class ScriptCleanlinessTest(unittest.TestCase):
             "--feature_extractor teacher_unet",
             "--teacher_feature_layers down_blocks.2,mid_block,up_blocks.0",
             "--teacher_feature_noise 0.1",
-            "--batchsize_gen 24",
-            "--num_pos_images 12",
-            "--num_neg_images 12",
+            "--batchsize_gen 16",
+            "--num_pos_images 8",
+            "--num_neg_images 8",
             "--max_train_steps 5000",
             "--learning_rate 1e-5",
         ]

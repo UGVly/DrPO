@@ -23,9 +23,9 @@ accelerate launch \
   --pickscore_model_name_or_path "$PROJECT_ROOT"/models/PickScore_v1 \
   --pickscore_processor_name_or_path "$PROJECT_ROOT"/models/PickScore_v1 \
   --resolution 512 \
-  --batchsize_gen 24 \
-  --num_pos_images 12 \
-  --num_neg_images 12 \
+  --batchsize_gen 16 \
+  --num_pos_images 8 \
+  --num_neg_images 8 \
   --max_train_steps 5000 \
   --gradient_accumulation_steps 8 \
   --learning_rate 1e-5 \
