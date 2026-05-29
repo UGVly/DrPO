@@ -52,6 +52,9 @@ class MethodLayoutTest(unittest.TestCase):
             text = (ROOT / "scripts" / "train" / f"{script}.sh").read_text(encoding="utf-8")
             self.assertIn(needle, text)
 
+    def test_open_clip_is_not_vendored(self):
+        self.assertFalse((ROOT / "src" / "open_clip").exists())
+
     def test_src_baseline_methods_are_compatibility_shims(self):
         for method in ("draft", "dpo", "grpo", "neighbor_grpo", "spo", "vggflow"):
             text = (ROOT / "src" / "drpo" / "methods" / method / "trainer.py").read_text(encoding="utf-8")

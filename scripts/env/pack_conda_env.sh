@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
 if [ $# -gt 0 ]; then
   env_name=$1
 else
   env_name=strong-drpo
 fi
 
-out_dir=/datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/conda_venvs
+out_dir="$PROJECT_ROOT"/conda_venvs
 out_path=$out_dir/$env_name.tar.gz
 mkdir -p "$out_dir"
 

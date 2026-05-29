@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from typing import Dict
+from typing import Dict, Sequence
 
 import torch
 import torch.nn.functional as F
@@ -46,11 +46,13 @@ from baselines.common import (  # noqa: E402
     load_prompt_file,
     one_step_clean_latent,
     resume_training_state,
+    cache_and_score_pil_rewards,
     save_runtime_snapshot,
     save_training_checkpoint,
     setup_logging,
 )
 from baselines.grpo.losses import (  # noqa: E402
+    batched_neighbor_grpo_loss,
     construct_neighbor_noises,
     neighbor_grpo_loss,
     quasi_norm_advantages,
@@ -163,6 +165,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--advantage_scale", type=float, default=1.0)
     parser.add_argument("--policy_kl_weight", type=float, default=0.0)
     parser.add_argument("--ref_model_l2_weight", type=float, default=0.02)
+    parser.add_argument("--vae_decode_chunk_size", type=int, default=4)
+    parser.add_argument("--reward_score_batch_size", type=int, default=128)
+    parser.add_argument("--reward_cache_dir", type=str, default=None)
+    parser.add_argument("--reward_cache_interval", type=int, default=1)
+    parser.add_argument("--reward_cache_images", action=argparse.BooleanOptionalAction, default=True)
 
     parser.add_argument("--eval_prompt_file", type=str, default=os.path.join(PROJECT_ROOT, "data", "prompts", "pickapicv2_test_unique.txt"))
     parser.add_argument("--num_eval_prompts", type=int, default=10)
@@ -193,6 +200,14 @@ def parse_args():
         raise ValueError("--neighbor_p_norm must satisfy 0 < p <= 2.")
     if args.neighbor_distance_temperature <= 0:
         raise ValueError("--neighbor_distance_temperature must be > 0.")
+    if args.vae_decode_chunk_size < 1:
+        raise ValueError("--vae_decode_chunk_size must be >= 1.")
+    if args.reward_score_batch_size < 1:
+        raise ValueError("--reward_score_batch_size must be >= 1.")
+    if args.reward_cache_interval < 0:
+        raise ValueError("--reward_cache_interval must be >= 0.")
+    if args.reward_cache_dir is None:
+        args.reward_cache_dir = os.path.join(args.output_dir, "reward_cache")
     return args
 
 
@@ -243,14 +258,18 @@ def _neighbor_based_grpo_terms(args, unet, ref_unet, vae, text_encoder, prompt: 
     deltas = torch.randn((args.batchsize_gen, 4, args.resolution // 8, args.resolution // 8), device=device, dtype=weight_dtype)
     noisy_latents = construct_neighbor_noises(base_noise, deltas, args.neighbor_sigma).to(dtype=weight_dtype)
     timesteps = torch.full((args.batchsize_gen,), args.generation_timestep, device=device, dtype=torch.long)
+    anchor_indices = torch.randperm(args.batchsize_gen, device=device)[: args.neighbor_num_anchors]
+    anchor_noisy = noisy_latents.index_select(0, anchor_indices)
+    anchor_timesteps = timesteps.index_select(0, anchor_indices)
+    anchor_encoder_hidden_states = encoder_hidden_states_one.repeat_interleave(args.neighbor_num_anchors, dim=0)
 
     with torch.no_grad():
         rollout_pred = unet(noisy_latents, timesteps, encoder_hidden_states).sample
         candidate_x0_old = pred_to_onestep_latent(noisy_latents, rollout_pred).detach()
-        ref_pred = ref_unet(noisy_latents, timesteps, encoder_hidden_states).sample
-        ref_x0 = pred_to_onestep_latent(noisy_latents, ref_pred).detach()
+        ref_pred = ref_unet(anchor_noisy, anchor_timesteps, anchor_encoder_hidden_states).sample
+        ref_anchor_x0 = pred_to_onestep_latent(anchor_noisy, ref_pred).detach()
 
-    sampled_images = decode_latents_to_pil(vae, candidate_x0_old)
+    sampled_images = decode_latents_to_pil(vae, candidate_x0_old, chunk_size=args.vae_decode_chunk_size)
     rewards = torch.tensor(args.reward_selector.score(sampled_images, prompt), device=device, dtype=torch.float32)
     advantages = quasi_norm_advantages(
         rewards,
@@ -259,10 +278,6 @@ def _neighbor_based_grpo_terms(args, unet, ref_unet, vae, text_encoder, prompt: 
         clip=args.advantage_clip,
     ).detach()
 
-    anchor_indices = torch.randperm(args.batchsize_gen, device=device)[: args.neighbor_num_anchors]
-    anchor_noisy = noisy_latents.index_select(0, anchor_indices)
-    anchor_timesteps = timesteps.index_select(0, anchor_indices)
-    anchor_encoder_hidden_states = encoder_hidden_states_one.repeat_interleave(args.neighbor_num_anchors, dim=0)
     current_pred = unet(anchor_noisy, anchor_timesteps, anchor_encoder_hidden_states).sample
     current_anchor_x0 = pred_to_onestep_latent(anchor_noisy, current_pred)
 
@@ -284,7 +299,7 @@ def _neighbor_based_grpo_terms(args, unet, ref_unet, vae, text_encoder, prompt: 
             temperature=args.neighbor_distance_temperature,
             reduction=args.neighbor_distance_reduction,
         )
-        ref_l2_anchor = F.mse_loss(current_anchor_x0[anchor_pos].float(), ref_x0[anchor_index].float())
+        ref_l2_anchor = F.mse_loss(current_anchor_x0[anchor_pos].float(), ref_anchor_x0[anchor_pos].float())
         policy_loss_sum = policy_loss_sum + policy_loss_anchor
         ratio_sum = ratio_sum + stats["ratio_mean"]
         clipfrac_sum = clipfrac_sum + stats["clipfrac"]
@@ -311,6 +326,128 @@ def _neighbor_based_grpo_terms(args, unet, ref_unet, vae, text_encoder, prompt: 
     }
 
 
+def _expand_group_embeddings(encoder_hidden_states_one: torch.Tensor, group_size: int) -> torch.Tensor:
+    return encoder_hidden_states_one.repeat_interleave(group_size, dim=0)
+
+
+def _neighbor_based_grpo_batch_terms(
+    args,
+    unet,
+    ref_unet,
+    vae,
+    text_encoder,
+    prompts: Sequence[str],
+    prompt_ids: torch.Tensor,
+    weight_dtype: torch.dtype,
+    device: torch.device,
+    *,
+    global_step: int,
+    reward_cache_call_index: int,
+):
+    batch_size = len(prompts)
+    group_size = args.batchsize_gen
+    num_anchors = args.neighbor_num_anchors
+    latent_shape = (4, args.resolution // 8, args.resolution // 8)
+
+    if batch_size < 1:
+        raise ValueError("Expected at least one prompt.")
+    if prompt_ids.shape[0] != batch_size:
+        raise ValueError(f"prompt_ids batch mismatch: {prompt_ids.shape[0]} vs {batch_size}")
+
+    with torch.no_grad():
+        encoder_hidden_states_one = text_encoder(prompt_ids)[0]
+    encoder_hidden_states = _expand_group_embeddings(encoder_hidden_states_one, group_size)
+
+    base_noise = torch.randn((batch_size, *latent_shape), device=device, dtype=weight_dtype)
+    deltas = torch.randn((batch_size, group_size, *latent_shape), device=device, dtype=weight_dtype)
+    base_scale = (max(0.0, 1.0 - float(args.neighbor_sigma) ** 2)) ** 0.5
+    noisy_latents = base_scale * base_noise[:, None, :, :, :] + float(args.neighbor_sigma) * deltas
+    noisy_latents_flat = noisy_latents.reshape(batch_size * group_size, *latent_shape)
+    timesteps_flat = torch.full((batch_size * group_size,), args.generation_timestep, device=device, dtype=torch.long)
+
+    anchor_indices = torch.stack(
+        [torch.randperm(group_size, device=device)[:num_anchors] for _ in range(batch_size)],
+        dim=0,
+    )
+    batch_indices = torch.arange(batch_size, device=device).unsqueeze(1)
+    anchor_noisy = noisy_latents[batch_indices, anchor_indices].reshape(batch_size * num_anchors, *latent_shape)
+    anchor_timesteps = torch.full((batch_size * num_anchors,), args.generation_timestep, device=device, dtype=torch.long)
+    anchor_encoder_hidden_states = _expand_group_embeddings(encoder_hidden_states_one, num_anchors)
+
+    with torch.no_grad():
+        rollout_pred = unet(noisy_latents_flat, timesteps_flat, encoder_hidden_states).sample
+        candidate_x0_old = pred_to_onestep_latent(noisy_latents_flat, rollout_pred).detach()
+        ref_pred = ref_unet(anchor_noisy, anchor_timesteps, anchor_encoder_hidden_states).sample
+        ref_anchor_x0 = pred_to_onestep_latent(anchor_noisy, ref_pred).detach().reshape(batch_size, num_anchors, *latent_shape)
+
+    current_pred = unet(anchor_noisy, anchor_timesteps, anchor_encoder_hidden_states).sample
+    current_anchor_x0 = pred_to_onestep_latent(anchor_noisy, current_pred).reshape(batch_size, num_anchors, *latent_shape)
+    candidate_x0_old = candidate_x0_old.reshape(batch_size, group_size, *latent_shape)
+    old_anchor_x0 = candidate_x0_old[batch_indices, anchor_indices]
+
+    sampled_images = decode_latents_to_pil(
+        vae,
+        candidate_x0_old.reshape(batch_size * group_size, *latent_shape),
+        chunk_size=args.vae_decode_chunk_size,
+    )
+    flat_prompts = [prompt for prompt in prompts for _ in range(group_size)]
+    cache_enabled = bool(args.reward_cache_images) and (
+        args.reward_cache_interval > 0 and int(global_step) % int(args.reward_cache_interval) == 0
+    )
+    score_values = cache_and_score_pil_rewards(
+        selector=args.reward_selector,
+        images=sampled_images,
+        prompts=flat_prompts,
+        cache_dir=args.reward_cache_dir,
+        global_step=global_step,
+        process_index=getattr(args, "process_index", 0),
+        call_index=reward_cache_call_index,
+        group_size=group_size,
+        choice_model=args.choice_model,
+        score_batch_size=args.reward_score_batch_size,
+        enabled=cache_enabled,
+    )
+    rewards = torch.tensor(score_values, device=device, dtype=torch.float32).reshape(batch_size, group_size)
+    advantages = torch.stack(
+        [
+            quasi_norm_advantages(
+                prompt_rewards,
+                p=args.neighbor_p_norm,
+                scale=args.advantage_scale,
+                clip=args.advantage_clip,
+            )
+            for prompt_rewards in rewards
+        ],
+        dim=0,
+    ).detach()
+
+    policy_loss, stats = batched_neighbor_grpo_loss(
+        candidate_x0_old,
+        current_anchor_x0,
+        old_anchor_x0,
+        advantages,
+        clip_range=args.ppo_clip_range,
+        max_log_ratio=args.max_log_ratio,
+        temperature=args.neighbor_distance_temperature,
+        reduction=args.neighbor_distance_reduction,
+    )
+    ppo_kl_loss = stats["approx_kl_loss"]
+    ref_l2 = F.mse_loss(current_anchor_x0.float(), ref_anchor_x0.float())
+    loss = policy_loss + args.ref_model_l2_weight * ref_l2 + args.policy_kl_weight * ppo_kl_loss
+    return {
+        "loss": loss,
+        "policy_loss": policy_loss.detach(),
+        "reward_mean": rewards.mean().detach(),
+        "reward_std": rewards.std(dim=1, unbiased=False).mean().detach(),
+        "adv_abs": advantages.abs().mean().detach(),
+        "ratio_mean": stats["ratio_mean"].detach(),
+        "clipfrac": stats["clipfrac"].detach(),
+        "ppo_kl": stats["approx_kl"].detach(),
+        "ref_l2": ref_l2.detach(),
+        "entropy": stats["entropy"].detach(),
+    }
+
+
 def _average_terms(terms: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
     keys = terms[0].keys()
     return {key: torch.stack([item[key] for item in terms]).mean() for key in keys}
@@ -325,6 +462,7 @@ def main() -> None:
         log_with=args.report_to,
         project_config=project_config,
     )
+    args.process_index = accelerator.process_index
     os.makedirs(args.output_dir, exist_ok=True)
     log_path = setup_logging(args, accelerator)
     if args.seed is not None:
@@ -375,6 +513,8 @@ def main() -> None:
         num_workers=args.dataloader_num_workers,
         collate_fn=collate_fn,
         drop_last=True,
+        pin_memory=torch.cuda.is_available(),
+        persistent_workers=args.dataloader_num_workers > 0,
     )
     lr_scheduler = get_scheduler(
         args.lr_scheduler,
@@ -424,17 +564,26 @@ def main() -> None:
             metric = args.choice_model
             accelerator.log({f"eval_avg_{metric}": eval_summary[f"avg_{metric}"], f"eval_best_{metric}": eval_summary[f"best_{metric}"], f"eval_worst_{metric}": eval_summary[f"worst_{metric}"]}, step=0)
 
-    term_fn = _neighbor_based_grpo_terms
+    reward_cache_call_index = 0
     while global_step < args.max_train_steps:
         for batch in dataloader:
             with accelerator.accumulate(unet):
                 prompt_batch = batch["prompt"]
                 input_ids = batch["input_ids"]
-                prompt_terms = []
-                for i, prompt in enumerate(prompt_batch):
-                    prompt_ids = input_ids[i : i + 1]
-                    prompt_terms.append(term_fn(args, unet, ref_unet, vae, text_encoder, prompt, prompt_ids, weight_dtype, accelerator.device))
-                terms = _average_terms(prompt_terms)
+                terms = _neighbor_based_grpo_batch_terms(
+                    args,
+                    unet,
+                    ref_unet,
+                    vae,
+                    text_encoder,
+                    prompt_batch,
+                    input_ids,
+                    weight_dtype,
+                    accelerator.device,
+                    global_step=global_step,
+                    reward_cache_call_index=reward_cache_call_index,
+                )
+                reward_cache_call_index += 1
                 loss = terms["loss"]
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:

@@ -136,6 +136,21 @@ dino_diversity
 fid_vs_baseline
 ```
 
+`clip_diversity` and `dino_diversity` now use the prompt-seed protocol when a
+manifest contains multiple seeds per prompt: compute pairwise cosine distance
+inside each prompt, then average those values over prompts. The summary also
+keeps `*_diversity_global` and `*_diversity_by_seed` for legacy diagnostics, but
+those should not be used as the paper diversity metric because they mix prompt
+semantics. For the fixed SDXL protocol, run 20 prompts x 25 seeds. The helper
+scripts default to `pickscore,clip_aes,dino,summarize`, so the same summary
+contains both PickScore and prompt-wise CLIP/DINO diversity for Pareto
+comparisons:
+
+```bash
+bash scripts/inference/evaluate_sdxl_turbo_base_prompt_seed_diversity.sh
+bash scripts/inference/evaluate_sdxl_lora_prompt_seed_diversity.sh /path/to/checkpoint
+```
+
 Metrics are written to:
 
 ```text

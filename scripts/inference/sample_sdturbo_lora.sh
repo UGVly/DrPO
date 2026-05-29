@@ -8,15 +8,17 @@ fi
 
 checkpoint=$1
 
-cd /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO
-export PYTHONPATH=/datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/src
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
+export PYTHONPATH="$PROJECT_ROOT"/src
 
 python -m inference.sd_turbo_lora \
   --checkpoint "$checkpoint" \
-  --outputs-dir /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/outputs \
-  --pretrained-model-path /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/models/sd-turbo \
-  --prompt-file /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/data/prompts/pickapicv2_test_unique.txt \
-  --samples-dir /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/samples \
+  --outputs-dir "$PROJECT_ROOT"/outputs \
+  --pretrained-model-path "$PROJECT_ROOT"/models/sd-turbo \
+  --prompt-file "$PROJECT_ROOT"/data/prompts/pickapicv2_test_unique.txt \
+  --samples-dir "$PROJECT_ROOT"/samples \
   --seeds 42,43,44,45,46 \
   --batch-size 4 \
   --resolution 512 \

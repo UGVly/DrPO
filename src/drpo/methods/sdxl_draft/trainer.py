@@ -8,6 +8,7 @@ import os
 import shlex
 import socket
 import sys
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -55,7 +56,7 @@ class SDXLDraftConfig:
     batchsize_gen: int = 24
     num_inference_steps: int = 1
     guidance_scale: float = 0.0
-    max_train_steps: int = 2000
+    max_train_steps: int = 5000
     gradient_accumulation_steps: int = 8
     dataloader_num_workers: int = 2
     max_train_samples: int | None = None
@@ -80,6 +81,7 @@ class SDXLDraftConfig:
     pickscore_loss_weight: float = 1.0
     ref_model_l2_weight: float = 0.02
     score_std_weight: float = 0.0
+    generation_chunk_size: int = 4
     vae_decode_chunk_size: int = 1
 
 
@@ -104,6 +106,8 @@ def _validate_config(config: SDXLDraftConfig) -> None:
         raise ValueError("This one-step SDXL-Draft trainer is aligned to SDXL-Turbo with guidance_scale=0.")
     if config.ref_model_l2_weight < 0:
         raise ValueError("ref_model_l2_weight must be non-negative.")
+    if config.generation_chunk_size < 1:
+        raise ValueError("generation_chunk_size must be >= 1.")
 
 
 def _setup_logging(config: SDXLDraftConfig, accelerator: Accelerator) -> None:
@@ -228,8 +232,8 @@ def train(config: SDXLDraftConfig) -> None:
     pipe.text_encoder_2.requires_grad_(False).eval()
     pipe.vae.requires_grad_(False).eval()
 
-    reference_unet = copy.deepcopy(pipe.unet).eval().requires_grad_(False)
     pipe.unet = _make_trainable(pipe.unet, config)
+    reference_unet = None if config.use_lora else copy.deepcopy(pipe.unet).eval().requires_grad_(False)
     if hasattr(pipe.unet, "enable_gradient_checkpointing"):
         pipe.unet.enable_gradient_checkpointing()
     _maybe_enable_xformers(pipe.unet)
@@ -257,16 +261,27 @@ def train(config: SDXLDraftConfig) -> None:
         num_training_steps=config.max_train_steps * accelerator.num_processes,
     )
 
-    pipe.unet, reference_unet, pipe.vae, pipe.text_encoder, pipe.text_encoder_2, optimizer, dataloader, lr_scheduler = accelerator.prepare(
-        pipe.unet,
-        reference_unet,
-        pipe.vae,
-        pipe.text_encoder,
-        pipe.text_encoder_2,
-        optimizer,
-        dataloader,
-        lr_scheduler,
-    )
+    if reference_unet is None:
+        pipe.unet, pipe.vae, pipe.text_encoder, pipe.text_encoder_2, optimizer, dataloader, lr_scheduler = accelerator.prepare(
+            pipe.unet,
+            pipe.vae,
+            pipe.text_encoder,
+            pipe.text_encoder_2,
+            optimizer,
+            dataloader,
+            lr_scheduler,
+        )
+    else:
+        pipe.unet, reference_unet, pipe.vae, pipe.text_encoder, pipe.text_encoder_2, optimizer, dataloader, lr_scheduler = accelerator.prepare(
+            pipe.unet,
+            reference_unet,
+            pipe.vae,
+            pipe.text_encoder,
+            pipe.text_encoder_2,
+            optimizer,
+            dataloader,
+            lr_scheduler,
+        )
     pickscore = _load_pickscore(config, accelerator.device)
     latent_channels = int(accelerator.unwrap_model(pipe.unet).config.in_channels)
     latent_size = config.resolution // int(getattr(pipe, "vae_scale_factor", 8) or 8)
@@ -287,55 +302,77 @@ def train(config: SDXLDraftConfig) -> None:
                 break
             assert isinstance(batch, Batch)
             with accelerator.accumulate(pipe.unet):
-                sample_losses = []
-                logs: dict[str, list[torch.Tensor]] = {}
+                prompt_count = max(1, len(batch.prompts))
+                batch_loss = torch.zeros((), device=accelerator.device)
+                metric_weight = 0.0
+                metric_sums: dict[str, torch.Tensor] = {}
+                saw_chunk = False
                 for prompt in batch.prompts:
-                    prompts = [prompt] * config.batchsize_gen
-                    with torch.no_grad():
-                        prompt_embeds, pooled_prompt_embeds = _encode_prompts(pipe, prompts, accelerator.device)
-                    latents = torch.randn(
-                        (config.batchsize_gen, latent_channels, latent_size, latent_size),
-                        device=accelerator.device,
-                        dtype=prompt_embeds.dtype,
-                    )
-                    generated_latents = _sdxl_one_step_latents(
-                        pipe=pipe,
-                        unet=pipe.unet,
-                        latents=latents,
-                        prompt_embeds=prompt_embeds,
-                        pooled_prompt_embeds=pooled_prompt_embeds,
-                        resolution=config.resolution,
-                        num_inference_steps=config.num_inference_steps,
-                    )
-                    with torch.no_grad():
-                        reference_latents = _sdxl_one_step_latents(
+                    remaining = config.batchsize_gen
+                    while remaining > 0:
+                        chunk_size = min(config.generation_chunk_size, remaining)
+                        prompts = [prompt] * chunk_size
+                        with torch.no_grad():
+                            prompt_embeds, pooled_prompt_embeds = _encode_prompts(pipe, prompts, accelerator.device)
+                        latents = torch.randn(
+                            (chunk_size, latent_channels, latent_size, latent_size),
+                            device=accelerator.device,
+                            dtype=prompt_embeds.dtype,
+                        )
+                        generated_latents = _sdxl_one_step_latents(
                             pipe=pipe,
-                            unet=reference_unet,
+                            unet=pipe.unet,
                             latents=latents,
                             prompt_embeds=prompt_embeds,
                             pooled_prompt_embeds=pooled_prompt_embeds,
                             resolution=config.resolution,
                             num_inference_steps=config.num_inference_steps,
                         )
-                    decoded = _decode_latents_to_tensor(pipe.vae, generated_latents, chunk_size=config.vae_decode_chunk_size)
-                    scores = pickscore.score_from_image_tensor(decoded, prompts)
-                    pickscore_mean = scores.mean()
-                    pickscore_std = scores.std(unbiased=False)
-                    ref_l2 = F.mse_loss(generated_latents.float(), reference_latents.float())
-                    loss_i = (
-                        -config.pickscore_loss_weight * pickscore_mean
-                        + config.ref_model_l2_weight * ref_l2
-                        - config.score_std_weight * pickscore_std
-                    )
-                    sample_losses.append(loss_i)
-                    logs.setdefault("pickscore_mean", []).append(pickscore_mean.detach().float())
-                    logs.setdefault("pickscore_std", []).append(pickscore_std.detach().float())
-                    logs.setdefault("ref_model_l2", []).append(ref_l2.detach().float())
-                if not sample_losses:
+                        if reference_unet is None:
+                            base_unet = accelerator.unwrap_model(pipe.unet)
+                            adapter_context = base_unet.disable_adapter() if hasattr(base_unet, "disable_adapter") else nullcontext()
+                            ref_forward_unet = pipe.unet
+                        else:
+                            adapter_context = nullcontext()
+                            ref_forward_unet = reference_unet
+
+                        with torch.no_grad(), adapter_context:
+                            reference_latents = _sdxl_one_step_latents(
+                                pipe=pipe,
+                                unet=ref_forward_unet,
+                                latents=latents,
+                                prompt_embeds=prompt_embeds,
+                                pooled_prompt_embeds=pooled_prompt_embeds,
+                                resolution=config.resolution,
+                                num_inference_steps=config.num_inference_steps,
+                            )
+                        decoded = _decode_latents_to_tensor(pipe.vae, generated_latents, chunk_size=config.vae_decode_chunk_size)
+                        scores = pickscore.score_from_image_tensor(decoded, prompts)
+                        pickscore_mean = scores.mean()
+                        pickscore_std = scores.std(unbiased=False)
+                        ref_l2 = F.mse_loss(generated_latents.float(), reference_latents.float())
+                        loss_i = (
+                            -config.pickscore_loss_weight * pickscore_mean
+                            + config.ref_model_l2_weight * ref_l2
+                            - config.score_std_weight * pickscore_std
+                        )
+                        chunk_weight = float(chunk_size) / float(config.batchsize_gen * prompt_count)
+                        accelerator.backward(loss_i * chunk_weight)
+                        batch_loss = batch_loss + loss_i.detach().float() * chunk_weight
+                        metric_weight += chunk_weight
+                        for key, value in {
+                            "pickscore_mean": pickscore_mean,
+                            "pickscore_std": pickscore_std,
+                            "ref_model_l2": ref_l2,
+                        }.items():
+                            metric_sums[key] = metric_sums.get(key, torch.zeros((), device=accelerator.device))
+                            metric_sums[key] = metric_sums[key] + value.detach().float() * chunk_weight
+                        saw_chunk = True
+                        remaining -= chunk_size
+
+                if not saw_chunk:
                     optimizer.zero_grad(set_to_none=True)
                     continue
-                loss = torch.stack(sample_losses).mean()
-                accelerator.backward(loss)
                 if accelerator.sync_gradients:
                     accelerator.clip_grad_norm_(_trainable_parameters(pipe.unet), config.max_grad_norm)
                 optimizer.step()
@@ -345,16 +382,16 @@ def train(config: SDXLDraftConfig) -> None:
             if accelerator.sync_gradients:
                 step += 1
                 log_values = {
-                    "train_loss": loss.detach(),
+                    "train_loss": batch_loss.detach(),
                     "lr": torch.tensor(lr_scheduler.get_last_lr()[0], device=accelerator.device),
                 }
-                for key, values in logs.items():
-                    if values:
-                        log_values[key] = torch.stack(values).mean()
+                if metric_weight > 0:
+                    for key, value in metric_sums.items():
+                        log_values[key] = value / metric_weight
                 accelerator.log({key: float(value.detach().cpu()) for key, value in log_values.items()}, step=step)
                 progress.update(1)
                 progress.set_postfix(
-                    loss=f"{float(loss.detach().cpu()):.4f}",
+                    loss=f"{float(batch_loss.detach().cpu()):.4f}",
                     pickscore=f"{float(log_values['pickscore_mean'].detach().cpu()):.3f}",
                 )
                 if config.checkpointing_steps > 0 and step % config.checkpointing_steps == 0:
@@ -386,7 +423,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batchsize_gen", type=int, default=24)
     parser.add_argument("--num_inference_steps", type=int, default=1)
     parser.add_argument("--guidance_scale", type=float, default=0.0)
-    parser.add_argument("--max_train_steps", type=int, default=2000)
+    parser.add_argument("--max_train_steps", type=int, default=5000)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=8)
     parser.add_argument("--dataloader_num_workers", type=int, default=2)
     parser.add_argument("--max_train_samples", type=int, default=None)
@@ -411,6 +448,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pickscore_loss_weight", type=float, default=1.0)
     parser.add_argument("--ref_model_l2_weight", type=float, default=0.02)
     parser.add_argument("--score_std_weight", type=float, default=0.0)
+    parser.add_argument("--generation_chunk_size", type=int, default=4)
     parser.add_argument("--vae_decode_chunk_size", type=int, default=1)
     return parser
 
@@ -457,6 +495,7 @@ def parse_config(argv: list[str] | None = None) -> SDXLDraftConfig:
         pickscore_loss_weight=args.pickscore_loss_weight,
         ref_model_l2_weight=args.ref_model_l2_weight,
         score_std_weight=args.score_std_weight,
+        generation_chunk_size=args.generation_chunk_size,
         vae_decode_chunk_size=args.vae_decode_chunk_size,
     )
 

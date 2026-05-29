@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO
-export PYTHONPATH=/datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/src
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
+export PYTHONPATH="$PROJECT_ROOT"/src
 export TOKENIZERS_PARALLELISM=false
 
 accelerate launch \
   --num_processes 4 \
   --main_process_port 29620 \
-  /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/src/drpo/methods/spo/trainer.py \
-  --pretrained_model_name_or_path /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/models/sd-turbo \
-  --pickscore_model_name_or_path /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/models/PickScore_v1 \
-  --pickscore_processor_name_or_path /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/models/PickScore_v1 \
-  --pairs_jsonl /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/data/pairs.jsonl \
+  "$PROJECT_ROOT"/src/drpo/methods/spo/trainer.py \
+  --pretrained_model_name_or_path "$PROJECT_ROOT"/models/sd-turbo \
+  --pickscore_model_name_or_path "$PROJECT_ROOT"/models/PickScore_v1 \
+  --pickscore_processor_name_or_path "$PROJECT_ROOT"/models/PickScore_v1 \
+  --pairs_jsonl "$PROJECT_ROOT"/data/pairs.jsonl \
   --choice_model pickscore \
-  --output_dir /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/outputs/spo/pickscore/default \
+  --output_dir "$PROJECT_ROOT"/outputs/spo/pickscore/default \
   --mixed_precision fp16 \
   --train_batch_size 1 \
   --gradient_accumulation_steps 8 \
@@ -36,7 +38,7 @@ accelerate launch \
   --spo_clip_range 0.1 \
   --max_log_ratio 10.0 \
   --ref_model_l2_weight 0.0 \
-  --eval_prompt_file /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/data/prompts/pickapicv2_test_unique.txt \
+  --eval_prompt_file "$PROJECT_ROOT"/data/prompts/pickapicv2_test_unique.txt \
   --num_eval_prompts 10 \
   --eval_every_steps 0 \
   --seed 42 \

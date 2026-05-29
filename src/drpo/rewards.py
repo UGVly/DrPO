@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+import json
 import os
+import re
+import subprocess
+import sys
 import tempfile
+import time
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from PIL import Image
 from packaging.version import Version
 from transformers import AutoModel, AutoProcessor, CLIPModel, CLIPProcessor, __version__ as transformers_version
@@ -41,6 +49,41 @@ class PickScoreSelector(RewardSelector):
         dtype = _dtype_for(self.device)
         self.processor = AutoProcessor.from_pretrained(self.processor_path, local_files_only=local_files_only)
         self.model = AutoModel.from_pretrained(self.model_path, **_dtype_kwargs(dtype), local_files_only=local_files_only).to(self.device).eval()
+        image_processor = getattr(self.processor, "image_processor", None)
+        if image_processor is None:
+            raise ValueError("Expected PickScore processor to expose image_processor.")
+        image_mean = getattr(image_processor, "image_mean", [0.48145466, 0.4578275, 0.40821073])
+        image_std = getattr(image_processor, "image_std", [0.26862954, 0.26130258, 0.27577711])
+        self.image_mean = torch.tensor(image_mean, dtype=torch.float32).view(1, 3, 1, 1)
+        self.image_std = torch.tensor(image_std, dtype=torch.float32).view(1, 3, 1, 1)
+        size_cfg = getattr(image_processor, "crop_size", None)
+        if hasattr(size_cfg, "get"):
+            self.image_size = int(size_cfg.get("height") or size_cfg.get("width") or 224)
+        elif isinstance(size_cfg, int):
+            self.image_size = int(size_cfg)
+        else:
+            size_cfg = getattr(image_processor, "size", {"shortest_edge": 224})
+            if hasattr(size_cfg, "get"):
+                self.image_size = int(size_cfg.get("shortest_edge") or size_cfg.get("height") or size_cfg.get("width") or 224)
+            else:
+                self.image_size = int(size_cfg or 224)
+
+    def _preprocess_tensor_images(self, images: torch.Tensor) -> torch.Tensor:
+        if images.ndim != 4 or images.shape[1] != 3:
+            raise ValueError(f"Expected image tensor with shape (B, 3, H, W), got {tuple(images.shape)}")
+        images = ((images.clamp(-1, 1) + 1.0) / 2.0).to(device=self.device, dtype=torch.float32)
+        if images.shape[-2:] != (self.image_size, self.image_size):
+            images = F.interpolate(
+                images,
+                size=(self.image_size, self.image_size),
+                mode="bicubic",
+                align_corners=False,
+                antialias=True,
+            )
+        image_mean = self.image_mean.to(device=self.device, dtype=images.dtype)
+        image_std = self.image_std.to(device=self.device, dtype=images.dtype)
+        model_dtype = next(self.model.parameters()).dtype
+        return ((images - image_mean) / image_std).to(dtype=model_dtype)
 
     @torch.no_grad()
     def score(self, images: Sequence[Image.Image], prompts: str | Sequence[str]) -> list[float]:
@@ -48,6 +91,15 @@ class PickScoreSelector(RewardSelector):
         image_inputs = self.processor(images=list(images), padding=True, return_tensors="pt").to(self.device)
         text_inputs = self.processor(text=prompts, padding=True, truncation=True, return_tensors="pt").to(self.device)
         image_features = normalize_features(feature_tensor(self.model.get_image_features(**image_inputs)).float())
+        text_features = normalize_features(feature_tensor(self.model.get_text_features(**text_inputs)).float())
+        return (image_features * text_features).sum(dim=-1).float().cpu().tolist()
+
+    @torch.no_grad()
+    def score_tensor(self, images: torch.Tensor, prompts: str | Sequence[str]) -> list[float]:
+        prompts = normalize_prompts(prompts, int(images.shape[0]))
+        pixel_values = self._preprocess_tensor_images(images)
+        text_inputs = self.processor(text=prompts, padding=True, truncation=True, max_length=77, return_tensors="pt").to(self.device)
+        image_features = normalize_features(feature_tensor(self.model.get_image_features(pixel_values=pixel_values)).float())
         text_features = normalize_features(feature_tensor(self.model.get_text_features(**text_inputs)).float())
         return (image_features * text_features).sum(dim=-1).float().cpu().tolist()
 
@@ -166,6 +218,7 @@ class HPSv3Selector(RewardSelector):
             checkpoint_path=str(self.checkpoint_path),
             device=str(self.device),
         )
+        self._supports_in_memory_images: bool | None = None
 
     def _local_config_path(self, config_path, model_config_path, yaml_module) -> Path:
         if config_path is not None or os.getenv("HPSV3_CONFIG_PATH"):
@@ -191,6 +244,18 @@ class HPSv3Selector(RewardSelector):
 
     @torch.no_grad()
     def score(self, images: Sequence[Image.Image], prompts: str | Sequence[str]) -> list[float]:
+        prompts = normalize_prompts(prompts, len(images))
+        if self._supports_in_memory_images is not False:
+            try:
+                image_tensors = [torch.from_numpy(np.asarray(image.convert("RGB"), dtype=np.uint8)) for image in images]
+                rewards = self.model.reward(image_tensors, prompts)
+                self._supports_in_memory_images = True
+                if isinstance(rewards, torch.Tensor):
+                    values = rewards[:, 0] if rewards.ndim > 1 else rewards
+                    return values.float().detach().cpu().tolist()
+                return [float(reward[0].item() if isinstance(reward, torch.Tensor) and reward.ndim else reward) for reward in rewards]
+            except Exception:
+                self._supports_in_memory_images = False
         with tempfile.TemporaryDirectory(prefix="drpo_hpsv3_images_") as tmp:
             paths = []
             for index, image in enumerate(images):
@@ -208,6 +273,19 @@ class ImageRewardSelector(RewardSelector):
         med_config_path: str | Path | None = None,
         bert_tokenizer_path: str | Path | None = None,
     ):
+        try:
+            import transformers.modeling_utils as modeling_utils
+            import transformers.pytorch_utils as pytorch_utils
+
+            for name in (
+                "apply_chunking_to_forward",
+                "find_pruneable_heads_and_indices",
+                "prune_linear_layer",
+            ):
+                if not hasattr(modeling_utils, name) and hasattr(pytorch_utils, name):
+                    setattr(modeling_utils, name, getattr(pytorch_utils, name))
+        except Exception:
+            pass
         try:
             import ImageReward as RM
         except ImportError as exc:  # pragma: no cover - optional eval env
@@ -293,7 +371,262 @@ class ImageRewardSelector(RewardSelector):
         return self._score_pil_batch(images, prompts)
 
 
-CHOICE_MODEL_NAMES = {"aes", "clip", "geneval", "hps", "hpsv2", "imagereward", "pickscore"}
+class DiffusionNFTGeneValSelector(RewardSelector):
+    """GeneVal reward adapter that reuses DiffusionNFT/Flow-GRPO's evaluator."""
+
+    def __init__(
+        self,
+        device,
+        diffusionnft_repo_path: str | Path | None = None,
+        metadata_path: str | Path | None = None,
+        train_metric: str = "score",
+    ):
+        self.device = torch.device(device)
+        self.train_metric = train_metric
+        self.diffusionnft_repo_path = self._resolve_diffusionnft_repo(diffusionnft_repo_path)
+        self._add_diffusionnft_paths(self.diffusionnft_repo_path)
+        from flow_grpo.rewards import multi_score
+
+        self.scorer = multi_score(self.device, {"geneval": 1.0})
+        self.metadata_by_prompt = self._load_metadata(metadata_path)
+
+    def _resolve_diffusionnft_repo(self, path: str | Path | None) -> Path:
+        candidates: list[str | Path | None] = [
+            path,
+            os.getenv("DIFFUSIONNFT_REPO_DIR"),
+            os.getenv("GENEVAL_DIFFUSIONNFT_REPO"),
+        ]
+        for candidate in candidates:
+            if not candidate:
+                continue
+            repo = Path(candidate).expanduser().resolve()
+            if (repo / "flow_grpo" / "rewards.py").is_file():
+                return require_local_path(repo, description="DiffusionNFT repo", must_be_file=False)
+        raise FileNotFoundError("Could not find a DiffusionNFT/Mutistepalign repo containing flow_grpo/rewards.py.")
+
+    def _add_diffusionnft_paths(self, repo: Path) -> None:
+        for path in (repo, repo / "mmdetection", repo / "mmcv"):
+            value = str(path)
+            if path.exists() and value not in sys.path:
+                sys.path.insert(0, value)
+
+    def _load_metadata(self, metadata_path: str | Path | None) -> dict[str, dict[str, Any]]:
+        path_value = metadata_path or os.getenv("DIFFUSIONNFT_GENEVAL_METADATA_PATH")
+        if path_value is None:
+            default_path = self.diffusionnft_repo_path / "dataset" / "geneval" / "train_metadata.jsonl"
+            path_value = default_path if default_path.is_file() else None
+        if path_value is None:
+            return {}
+
+        path = require_local_path(path_value, description="DiffusionNFT GeneVal metadata", must_be_file=True)
+        rows: dict[str, dict[str, Any]] = {}
+        with path.open("r", encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                if not isinstance(row, dict):
+                    raise TypeError(f"GeneVal metadata row {line_number} must be an object.")
+                prompt = str(row.get("prompt", "")).strip()
+                if prompt:
+                    rows[prompt] = row
+        return rows
+
+    def _payload_to_metadata(self, payload: Any, count: int) -> tuple[list[str], list[dict[str, Any]]]:
+        if isinstance(payload, Mapping):
+            prompt_text = str(payload.get("prompt", "")).strip()
+            metadata = payload.get("geneval_metadata") or payload.get("metadata")
+            if metadata is None and "tag" in payload:
+                metadata = payload
+            if metadata is None:
+                raise ValueError("DiffusionNFT GeneVal reward requires geneval_metadata for each prompt.")
+            if isinstance(metadata, Mapping):
+                metadata_list = [dict(metadata) for _ in range(count)]
+            elif isinstance(metadata, Sequence) and not isinstance(metadata, (str, bytes)):
+                metadata_list = [dict(item) for item in metadata]
+                if len(metadata_list) != count:
+                    raise ValueError(f"Expected {count} GeneVal metadata entries, got {len(metadata_list)}.")
+            else:
+                raise TypeError(f"Unsupported GeneVal metadata payload: {type(metadata)}")
+            prompts = [prompt_text or str(item.get("prompt", "")) for item in metadata_list]
+            return prompts, metadata_list
+
+        if isinstance(payload, Sequence) and not isinstance(payload, (str, bytes)):
+            values = list(payload)
+            if len(values) == count and all(isinstance(item, Mapping) for item in values):
+                metadata_list = [dict(item) for item in values]
+                prompts = [str(item.get("prompt", "")) for item in metadata_list]
+                return prompts, metadata_list
+
+        prompts = normalize_prompts(payload, count)
+        metadata_list = []
+        for prompt in prompts:
+            metadata = self.metadata_by_prompt.get(prompt)
+            if metadata is None:
+                raise KeyError(f"No GeneVal metadata found for prompt: {prompt!r}")
+            metadata_list.append(dict(metadata))
+        return prompts, metadata_list
+
+    def _metric_values(self, score_details: dict[str, Any]) -> Any:
+        metric = self.train_metric.strip().lower()
+        if metric in {"score", "soft", "soft_score", "avg", "geneval"}:
+            return score_details["avg"]
+        if metric in {"strict", "strict_accuracy"}:
+            return score_details["strict_accuracy"]
+        if metric in {"accuracy", "relaxed_accuracy"}:
+            return score_details["accuracy"]
+        raise ValueError("geneval_train_metric must be one of: score, strict_accuracy, accuracy.")
+
+    @torch.no_grad()
+    def score(self, images: Sequence[Image.Image], prompts: Any) -> list[float]:
+        prompt_list, metadata_list = self._payload_to_metadata(prompts, len(images))
+        image_array = np.stack([np.asarray(image.convert("RGB"), dtype=np.uint8) for image in images], axis=0)
+        score_details, _ = self.scorer(image_array, prompt_list, metadata_list, only_strict=True)
+        values = self._metric_values(score_details)
+        if isinstance(values, torch.Tensor):
+            return values.float().detach().cpu().tolist()
+        return [float(value) for value in values]
+
+
+class OCRSelector(RewardSelector):
+    """PaddleOCR text-rendering reward compatible with DiffusionNFT OCR prompts."""
+
+    _quoted_text = re.compile(r"[\"']([^\"']+)[\"']")
+    _subprocess_code = r"""
+import json
+import re
+import sys
+from pathlib import Path
+
+import numpy as np
+from Levenshtein import distance
+from paddleocr import PaddleOCR
+from PIL import Image
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+model_root = Path.home() / ".paddleocr" / "whl"
+ocr = PaddleOCR(
+    use_angle_cls=False,
+    lang="en",
+    use_gpu=False,
+    show_log=False,
+    det_model_dir=str(model_root / "det" / "en" / "en_PP-OCRv3_det_infer"),
+    rec_model_dir=str(model_root / "rec" / "en" / "en_PP-OCRv4_rec_infer"),
+    cls_model_dir=str(model_root / "cls" / "ch" / "ch_ppocr_mobile_v2.0_cls_infer"),
+)
+scores = []
+for item in payload:
+    target = re.sub(r"\s+", "", item["target"]).lower()
+    image = np.asarray(Image.open(item["image"]).convert("RGB"), dtype=np.uint8)
+    try:
+        result = ocr.ocr(image, cls=False)
+        recognized = "".join(res[1][0] if res[1][1] > 0 else "" for res in (result[0] or []))
+        recognized = re.sub(r"\s+", "", recognized).lower()
+        dist = 0 if target in recognized else min(distance(recognized, target), len(target))
+    except Exception as exc:
+        print(f"OCR processing failed: {exc}", file=sys.stderr)
+        dist = len(target)
+    scores.append(1.0 - dist / max(len(target), 1))
+print(json.dumps(scores))
+"""
+
+    def __init__(self, device=None, use_gpu: bool | None = None):
+        self.subprocess_python = os.getenv("DRPO_OCR_SUBPROCESS_PYTHON", "").strip()
+        self.device = torch.device(device) if device is not None else torch.device("cpu")
+        if self.subprocess_python:
+            self.ocr = None
+            self._distance = self._edit_distance
+            return
+        try:
+            from paddleocr import PaddleOCR
+        except ImportError as exc:  # pragma: no cover - optional OCR env
+            raise ImportError("PaddleOCR is not installed in the active environment.") from exc
+
+        if use_gpu is None:
+            use_gpu = os.getenv("DRPO_OCR_USE_GPU", "").strip().lower() in {"1", "true", "yes", "on"}
+        self.ocr = PaddleOCR(use_angle_cls=False, lang="en", use_gpu=bool(use_gpu), show_log=False)
+        try:
+            from Levenshtein import distance as levenshtein_distance
+        except ImportError:
+            levenshtein_distance = self._edit_distance
+        self._distance = levenshtein_distance
+
+    @staticmethod
+    def _edit_distance(left: str, right: str) -> int:
+        if left == right:
+            return 0
+        prev = list(range(len(right) + 1))
+        for i, left_ch in enumerate(left, start=1):
+            cur = [i]
+            for j, right_ch in enumerate(right, start=1):
+                cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (left_ch != right_ch)))
+            prev = cur
+        return prev[-1]
+
+    @classmethod
+    def _target_text(cls, prompt: str) -> str:
+        match = cls._quoted_text.search(prompt)
+        if match is None:
+            raise ValueError(f"OCR reward prompt must contain target text in quotes: {prompt!r}")
+        return match.group(1)
+
+    @staticmethod
+    def _normalize_text(value: str) -> str:
+        return re.sub(r"\s+", "", value).lower()
+
+    @torch.no_grad()
+    def score(self, images: Sequence[Image.Image], prompts: str | Sequence[str]) -> list[float]:
+        prompts = normalize_prompts(prompts, len(images))
+        targets = [self._normalize_text(self._target_text(prompt)) for prompt in prompts]
+        if self.subprocess_python:
+            with tempfile.TemporaryDirectory(prefix="drpo_ocr_") as tmp:
+                tmp_path = Path(tmp)
+                payload = []
+                for index, (image, target) in enumerate(zip(images, targets)):
+                    image_path = tmp_path / f"{index:04d}.png"
+                    image.convert("RGB").save(image_path)
+                    payload.append({"image": str(image_path), "target": target})
+                payload_path = tmp_path / "payload.json"
+                payload_path.write_text(json.dumps(payload), encoding="utf-8")
+                result = subprocess.run(
+                    [self.subprocess_python, "-c", self._subprocess_code, str(payload_path)],
+                    check=True,
+                    text=True,
+                    capture_output=True,
+                    env={**os.environ, "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"},
+                )
+                return [float(value) for value in json.loads(result.stdout)]
+        rewards: list[float] = []
+        for image, target in zip(images, targets):
+            array = np.asarray(image.convert("RGB"), dtype=np.uint8)
+            try:
+                result = self.ocr.ocr(array, cls=False)
+                recognized = "".join(res[1][0] if res[1][1] > 0 else "" for res in (result[0] or []))
+                recognized = self._normalize_text(recognized)
+                distance = 0 if target in recognized else int(self._distance(recognized, target))
+                distance = min(distance, len(target))
+            except Exception as exc:
+                print(f"OCR processing failed: {exc}")
+                distance = len(target)
+            rewards.append(1.0 - distance / max(len(target), 1))
+        return rewards
+
+
+CHOICE_MODEL_NAMES = {
+    "aes",
+    "clip",
+    "diffusionnft_geneval",
+    "diffusionnft_ocr",
+    "geneval",
+    "geneval_flow",
+    "hps",
+    "hpsv2",
+    "hpsv3",
+    "imagereward",
+    "image_reward",
+    "ocr",
+    "pickscore",
+}
 
 
 def resolve_choice_models(choice_models: str | Sequence[str] | None, fallback_choice_model: str) -> tuple[str, ...]:
@@ -342,6 +675,9 @@ def build_selector(
     geneval_detector_path: str | Path | None = None,
     geneval_model_config: str | Path | None = None,
     geneval_options: str = "",
+    diffusionnft_repo_path: str | Path | None = None,
+    geneval_metadata_path: str | Path | None = None,
+    geneval_train_metric: str = "score",
     local_files_only: bool = True,
 ) -> RewardSelector:
     normalized = name.lower()
@@ -363,6 +699,15 @@ def build_selector(
             geneval_model_config=str(geneval_model_config) if geneval_model_config is not None else None,
             geneval_options=geneval_options,
         )
+    if normalized in {"diffusionnft_geneval", "geneval_flow"}:
+        return DiffusionNFTGeneValSelector(
+            device,
+            diffusionnft_repo_path=diffusionnft_repo_path,
+            metadata_path=geneval_metadata_path,
+            train_metric=geneval_train_metric,
+        )
+    if normalized in {"ocr", "diffusionnft_ocr"}:
+        return OCRSelector(device)
     if normalized == "hpsv3":
         return HPSv3Selector(device)
     if normalized in {"imagereward", "image_reward"}:
@@ -380,22 +725,78 @@ def build_choice_selectors(
     geneval_detector_path: str | Path | None = None,
     geneval_model_config: str | Path | None = None,
     geneval_options: str = "",
+    diffusionnft_repo_path: str | Path | None = None,
+    geneval_metadata_path: str | Path | None = None,
+    geneval_train_metric: str = "score",
     local_files_only: bool = True,
 ) -> dict[str, RewardSelector]:
+    device_overrides = _parse_choice_model_device_overrides(os.getenv("DRPO_CHOICE_MODEL_DEVICES", ""))
     return {
         model: build_selector(
             model,
-            device,
+            device_overrides.get(model, device),
             pickscore_model_path=pickscore_model_path,
             pickscore_processor_path=pickscore_processor_path,
             geneval_repo=geneval_repo,
             geneval_detector_path=geneval_detector_path,
             geneval_model_config=geneval_model_config,
             geneval_options=geneval_options,
+            diffusionnft_repo_path=diffusionnft_repo_path,
+            geneval_metadata_path=geneval_metadata_path,
+            geneval_train_metric=geneval_train_metric,
             local_files_only=local_files_only,
         )
         for model in models
     }
+
+
+def _parse_choice_model_device_overrides(value: str) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    for item in value.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "=" in item:
+            key, _, device = item.partition("=")
+        elif ":" in item:
+            key, _, device = item.partition(":")
+        else:
+            raise ValueError("DRPO_CHOICE_MODEL_DEVICES entries must use model=device.")
+        key = key.strip()
+        device = device.strip()
+        if key not in CHOICE_MODEL_NAMES:
+            raise ValueError(f"Unknown choice model in DRPO_CHOICE_MODEL_DEVICES: {key}")
+        if not device:
+            raise ValueError(f"Missing device for DRPO_CHOICE_MODEL_DEVICES entry: {item}")
+        overrides[key] = device
+    return overrides
+
+
+def _payload_for_selector(model_name: str, prompt: Any) -> Any:
+    if not isinstance(prompt, Mapping):
+        return prompt
+    normalized = model_name.lower()
+    if normalized == "geneval":
+        return prompt.get("geneval_metadata") or prompt.get("metadata") or prompt
+    if normalized in {"diffusionnft_geneval", "geneval_flow"}:
+        return prompt
+    return prompt.get("prompt", prompt)
+
+
+def _truthy_env(name: str) -> bool:
+    value = os.getenv(name, "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _score_one_selector(
+    model_name: str,
+    selector: RewardSelector,
+    images: Sequence[Image.Image],
+    prompt: Any,
+) -> tuple[str, torch.Tensor, float]:
+    start = time.perf_counter()
+    scores = selector.score(images, _payload_for_selector(model_name, prompt))
+    return model_name, torch.tensor(scores, dtype=torch.float32), time.perf_counter() - start
 
 
 def score_reward_ensemble(
@@ -406,6 +807,7 @@ def score_reward_ensemble(
     *,
     normalize: str = "zscore",
     eps: float = 1e-6,
+    parallel_models: bool | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     if len(selectors) == 0:
         raise ValueError("Expected at least one reward selector.")
@@ -413,8 +815,29 @@ def score_reward_ensemble(
         raise ValueError(f"Expected {len(selectors)} weights, got {len(weights)}.")
     weighted_terms: list[torch.Tensor] = []
     info: dict[str, torch.Tensor] = {}
-    for (model_name, selector), weight in zip(selectors.items(), weights):
-        raw = torch.tensor(selector.score(images, prompt), dtype=torch.float32)
+    selector_items = list(selectors.items())
+    if parallel_models is None:
+        parallel_models = _truthy_env("DRPO_PARALLEL_REWARD_SELECTORS")
+    if parallel_models and len(selector_items) > 1:
+        max_workers = min(len(selector_items), max(1, int(os.getenv("DRPO_PARALLEL_REWARD_WORKERS", str(len(selector_items))))))
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            raw_by_model = {
+                model_name: (raw, elapsed)
+                for model_name, raw, elapsed in pool.map(
+                    lambda item: _score_one_selector(item[0], item[1], images, prompt),
+                    selector_items,
+                )
+            }
+    else:
+        raw_by_model = {
+            model_name: (raw, elapsed)
+            for model_name, raw, elapsed in (
+                _score_one_selector(model_name, selector, images, prompt)
+                for model_name, selector in selector_items
+            )
+        }
+    for model_name, weight in zip(selectors.keys(), weights):
+        raw, elapsed = raw_by_model[model_name]
         if raw.ndim != 1 or raw.numel() != len(images):
             raise ValueError(
                 f"Selector {model_name} returned invalid score shape {tuple(raw.shape)} for {len(images)} images."
@@ -433,6 +856,7 @@ def score_reward_ensemble(
         info[f"online_reward_{safe_name}_norm_mean"] = normed.mean().detach()
         info[f"online_reward_{safe_name}_norm_std"] = normed.std(unbiased=False).detach()
         info[f"online_reward_{safe_name}_weight"] = raw.new_tensor(float(weight))
+        info[f"online_reward_{safe_name}_score_seconds"] = raw.new_tensor(float(elapsed))
     ensemble = torch.stack(weighted_terms, dim=0).sum(dim=0)
     info["online_reward_ensemble_mean"] = ensemble.mean().detach()
     info["online_reward_ensemble_std"] = ensemble.std(unbiased=False).detach()

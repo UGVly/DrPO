@@ -48,8 +48,16 @@ def read_prompts(path: str | Path, *, max_prompts: int | None = None) -> list[Pr
     prompt_path = require_local_path(path, description="prompt file", must_be_file=True)
     records: list[PromptRecord] = []
     with Path(prompt_path).open("r", encoding="utf-8") as handle:
-        for prompt_id, line in enumerate(handle):
-            prompt = line.rstrip("\n")
+        for line_id, line in enumerate(handle):
+            raw = line.strip()
+            if not raw:
+                continue
+            prompt = raw
+            prompt_id = line_id
+            if raw.startswith("{"):
+                payload = json.loads(raw)
+                prompt = str(payload.get("prompt", "")).strip()
+                prompt_id = int(payload.get("prompt_id", line_id))
             if not prompt:
                 continue
             records.append(PromptRecord(prompt_id=prompt_id, prompt=prompt))

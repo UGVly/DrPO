@@ -1,7 +1,21 @@
 # StrongDrPO
 
-StrongDrPO is a cleaned-up DrPO/Draft training repo derived from `/datapool/jiangzhou/CODE/Text2ImageProject/DrPO`.
-It keeps the research code in `src/`, lightweight launch wrappers in `scripts/`, and excludes local datasets, checkpoints, logs, and packed environments from git.
+StrongDrPO is the open-source training code for Drifting Preference Optimization
+(DrPO) on one-step text-to-image diffusion models.
+
+The repository is intentionally small:
+
+```text
+src/drpo/          Core DrPO library, rewards, feature extraction, trainers
+src/inference/     Sampling and metric utilities
+baselines/         Compact comparison methods used in the paper
+scripts/train/     Reproducible launch recipes
+scripts/inference/ Sampling and evaluation wrappers
+tests/             Layout and numerical unit tests
+```
+
+Local datasets, checkpoints, logs, generated figures, paper builds, and one-off
+cluster launch scripts are excluded from the open-source tree.
 
 ## Environment
 
@@ -26,14 +40,21 @@ The archive is written to `conda_venvs/<env>.tar.gz`.
 Training expects local assets under the project root:
 
 ```text
-models/stable-diffusion-xl-turbo/
-models/facebook-vit-mae-base/
+models/sd-turbo/
+models/sdxl-turbo/
 models/PickScore_v1/
+models/CLIP-ViT-L-14/
+models/CLIP-ViT-H-14-laion2B-s32B-b79K/open_clip_pytorch_model.bin
+models/HPSv2/HPS_v2_compressed.pt
+models/Aesthetic/sac+logos+ava1-l14-linearMSE.pth
+drifting/mae_latent_256_torch.pth
 data/prompts/pickapicv2_test_unique.txt
 data/pairs.jsonl
 ```
 
-Paths can be overridden with environment variables such as `PRETRAINED_MODEL_PATH`, `MAE_MODEL_PATH`, `PICKSCORE_MODEL_PATH`, and `PROMPT_FILE`.
+Paths can be overridden with environment variables such as
+`PRETRAINED_MODEL_PATH`, `PICKSCORE_MODEL_PATH`, `HPS_CKPT_PATH`,
+`AESTHETIC_CKPT_PATH`, `HPS_OPEN_CLIP_PRETRAINED_PATH`, and `PROMPT_FILE`.
 
 ## SDXL-Turbo Runs
 
@@ -48,14 +69,6 @@ bash scripts/train/sdxl_turbo_drpo_teacher.sh
 bash scripts/train/sdxl_turbo_draft.sh
 ```
 
-For `wyd-h100`, use:
-
-```bash
-bash scripts/manual_launches/run_sdxl_turbo_drpo_draft_wyd_h100_lr1e-5.sh
-```
-
-The launcher uses the active conda installation, activates `CONDA_ENV_NAME` (default `mydiffusers`), and writes logs under `logs/launcher_logs/`.
-
 ## SD-Turbo DrPO Entrypoints
 
 LoRA and full-UNet DrPO training use explicit entrypoints:
@@ -66,3 +79,10 @@ bash scripts/train/drpo_full.sh online
 ```
 
 Both entrypoints share `src/drpo/training/trainer.py`; only the adapter/full training mode is fixed by the entrypoint.
+
+## Repository Hygiene
+
+For release preparation, keep only reusable code under `src/`, maintained launch
+recipes under `scripts/`, and tests/docs that describe those paths. Put local
+sweeps, paper-rendering artifacts, copied PDFs, generated figures, and machine
+specific launch helpers outside the tracked tree.

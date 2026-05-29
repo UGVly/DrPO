@@ -805,15 +805,112 @@ def resolve_drifting_feature_keys(args, extractor: FrozenMAELatentFeatureExtract
     return (args.drifting_feature_key,)
 
 
-def decode_latents_to_pil(vae: AutoencoderKL, latents: torch.Tensor) -> List[Image.Image]:
+def decode_latents_to_pil(vae: AutoencoderKL, latents: torch.Tensor, *, chunk_size: int = 4) -> List[Image.Image]:
     with torch.no_grad():
-        imgs = vae.decode((latents / vae.config.scaling_factor).to(device=vae.device, dtype=vae.dtype)).sample
+        scaled_latents = (latents / vae.config.scaling_factor).to(device=vae.device, dtype=vae.dtype)
+        decoded_chunks = [
+            vae.decode(chunk).sample
+            for chunk in scaled_latents.split(max(1, int(chunk_size)))
+        ]
+        imgs = torch.cat(decoded_chunks, dim=0)
     imgs = ((imgs.clamp(-1, 1) + 1) / 2).detach().cpu()
     imgs = (imgs * 255).round().to(torch.uint8)
     out = []
     for img in imgs:
         out.append(Image.fromarray(img.permute(1, 2, 0).numpy()))
     return out
+
+
+def score_pil_images(
+    selector,
+    images: Sequence[Image.Image],
+    prompts: Sequence[str],
+    *,
+    batch_size: int = 128,
+) -> List[float]:
+    if len(images) != len(prompts):
+        raise ValueError(f"images/prompts length mismatch: {len(images)} vs {len(prompts)}")
+    if not images:
+        return []
+    scores: List[float] = []
+    chunk_size = max(1, int(batch_size))
+    for start in range(0, len(images), chunk_size):
+        end = start + chunk_size
+        scores.extend(selector.score(images[start:end], prompts[start:end]))
+    return [float(score) for score in scores]
+
+
+def cache_and_score_pil_rewards(
+    *,
+    selector,
+    images: Sequence[Image.Image],
+    prompts: Sequence[str],
+    cache_dir: str | os.PathLike[str] | None,
+    global_step: int,
+    process_index: int,
+    call_index: int,
+    group_size: int,
+    choice_model: str,
+    score_batch_size: int = 128,
+    enabled: bool = True,
+) -> List[float]:
+    """Save reward images before scoring, then write a scored manifest.
+
+    Training still scores the in-memory PIL objects so the manifest is an audit
+    trail and restart hook, not a forced disk round trip.
+    """
+
+    if len(images) != len(prompts):
+        raise ValueError(f"images/prompts length mismatch: {len(images)} vs {len(prompts)}")
+    if group_size < 1:
+        raise ValueError("group_size must be >= 1")
+
+    records: List[Dict[str, Any]] = []
+    if enabled:
+        if cache_dir is None:
+            raise ValueError("cache_dir is required when reward cache is enabled")
+        step_dir = (
+            Path(cache_dir)
+            / f"step-{int(global_step):06d}"
+            / f"rank-{int(process_index):03d}"
+            / f"call-{int(call_index):06d}"
+        )
+        step_dir.mkdir(parents=True, exist_ok=True)
+        for flat_index, (image, prompt) in enumerate(zip(images, prompts)):
+            local_prompt_index = flat_index // group_size
+            candidate_index = flat_index % group_size
+            image_name = f"p{local_prompt_index:04d}_g{candidate_index:03d}.png"
+            image_path = step_dir / image_name
+            image.save(image_path)
+            records.append(
+                {
+                    "step": int(global_step),
+                    "rank": int(process_index),
+                    "call_index": int(call_index),
+                    "local_prompt_index": int(local_prompt_index),
+                    "candidate_index": int(candidate_index),
+                    "group_size": int(group_size),
+                    "prompt": prompt,
+                    "image_path": str(image_path),
+                    "width": int(image.width),
+                    "height": int(image.height),
+                    "choice_model": choice_model,
+                }
+            )
+
+    scores = score_pil_images(selector, images, prompts, batch_size=score_batch_size)
+
+    if enabled:
+        manifest_path = Path(records[0]["image_path"]).parent / "manifest.jsonl" if records else None
+        if manifest_path is not None:
+            tmp_path = manifest_path.with_suffix(".jsonl.tmp")
+            with open(tmp_path, "w", encoding="utf-8") as handle:
+                for record, score in zip(records, scores):
+                    row = dict(record)
+                    row["score"] = float(score)
+                    handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+            os.replace(tmp_path, manifest_path)
+    return scores
 
 
 def encode_images_to_latents(
@@ -1045,6 +1142,8 @@ def evaluate_fixed_prompts(
     unet_to_eval.eval()
 
     records = []
+    eval_images: List[Image.Image] = []
+    eval_prompts: List[str] = []
     with torch.no_grad():
         for prompt_idx, prompt in enumerate(prompts):
             prompt_ids = tokenizer(
@@ -1073,8 +1172,8 @@ def evaluate_fixed_prompts(
             image = decode_latents_to_pil(vae, model_pred_latent)[0]
             file_name = f"{prompt_idx:03d}.png"
             image.save(os.path.join(step_dir, file_name))
-            score_value = float(selector.score([image], prompt)[0])
-            score_key = args.choice_model
+            eval_images.append(image)
+            eval_prompts.append(prompt)
             records.append(
                 {
                     "step": global_step,
@@ -1082,9 +1181,18 @@ def evaluate_fixed_prompts(
                     "prompt": prompt,
                     "file_name": file_name,
                     "seed": args.eval_seed + prompt_idx,
-                    score_key: score_value,
                 }
             )
+
+    score_key = args.choice_model
+    eval_scores = score_pil_images(
+        selector,
+        eval_images,
+        eval_prompts,
+        batch_size=int(getattr(args, "reward_score_batch_size", 128)),
+    )
+    for record, score_value in zip(records, eval_scores):
+        record[score_key] = float(score_value)
 
     if was_training:
         unet_to_eval.train()
@@ -1094,7 +1202,6 @@ def evaluate_fixed_prompts(
         for record in records:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    score_key = args.choice_model
     avg_score = sum(record[score_key] for record in records) / len(records)
     summary = {
         "step": global_step,
@@ -2610,4 +2717,3 @@ class FrozenDinoV2BFeatureExtractor(nn.Module):
         if value.shape[1] == 1:
             return value[:, 0, :]
         return value.flatten(1)
-

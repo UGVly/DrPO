@@ -1,28 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO
-export PYTHONPATH=/datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/src
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
+export PYTHONPATH="$PROJECT_ROOT"/src
 export TOKENIZERS_PARALLELISM=false
 
 accelerate launch \
   --num_processes 8 \
   --main_process_port 29641 \
-  /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/src/drpo/methods/sdxl_drpo/trainer.py \
-  --pretrained_model_name_or_path /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/models/stable-diffusion-xl-turbo \
-  --mae_model_name_or_path /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/models/facebook-vit-mae-base \
-  --prompt_file /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/data/prompts/pickapicv2_test_unique.txt \
-  --output_dir /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/outputs/sdxl-turbo-lora/drpo/mae/default \
+  "$PROJECT_ROOT"/src/drpo/methods/sdxl_drpo/trainer.py \
+  --pretrained_model_name_or_path "$PROJECT_ROOT"/models/stable-diffusion-xl-turbo \
+  --mae_model_name_or_path "$PROJECT_ROOT"/models/facebook-vit-mae-base \
+  --prompt_file "$PROJECT_ROOT"/data/prompts/pickapicv2_test_unique.txt \
+  --output_dir "$PROJECT_ROOT"/outputs/sdxl-turbo-lora/drpo/mae/default \
   --feature_extractor mae \
   --mae_feature_keys layer12_patch_mean,layer12_patch_std,layer12_cls \
   --choice_model pickscore \
-  --pickscore_model_name_or_path /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/models/PickScore_v1 \
-  --pickscore_processor_name_or_path /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/models/PickScore_v1 \
+  --pickscore_model_name_or_path "$PROJECT_ROOT"/models/PickScore_v1 \
+  --pickscore_processor_name_or_path "$PROJECT_ROOT"/models/PickScore_v1 \
   --resolution 512 \
   --batchsize_gen 8 \
   --num_pos_images 2 \
   --num_neg_images 2 \
-  --max_train_steps 1000 \
+  --max_train_steps 5000 \
   --gradient_accumulation_steps 8 \
   --learning_rate 1e-5 \
   --mixed_precision bf16 \

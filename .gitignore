@@ -1,5 +1,6 @@
 __pycache__/
 *.py[cod]
+.DS_Store
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
@@ -33,3 +34,10 @@ conda_venvs/*
 *.pid
 /samples/
 scripts_backup_before_cleanup_*.tar.gz
+
+# Local-only research artifacts and one-off experiments.
+/archive/
+/figures/
+/remote_figures/
+/_NeurIPS__26__DrPO__Drifting_Preference_Optimization/
+/runtime/

@@ -9,6 +9,47 @@ Relevant files:
 - `baselines/vggflow/reward_gradient.py`
 - `src/drpo/sdturbo.py`
 
+SDXL-Turbo VGGFlow sweep code was experimental and is not part of the tracked
+open-source surface.
+
+## SD-Turbo VGGFlow Defaults
+
+The maintained VGGFlow entrypoint is:
+
+```bash
+bash scripts/train/vggflow.sh
+```
+
+Current default settings:
+
+```text
+num_processes = 4
+learning_rate = 1e-4
+batchsize_gen = 8
+gradient_accumulation_steps = 8
+max_train_steps = 1000
+reward_scale = 1000.0
+vae_decode_chunk_size = 4
+eta_mode = constant
+rgrad_clip_threshold = 1.0
+rgrad_quantile = 0.8
+rgrad_jitter_count = 1
+rgrad_jitter_std = 0.0
+unet_reg_scale = 0.0
+```
+
+`generation_chunk_size` is a memory-control knob. The effective generated batch is still `batchsize_gen=24`, but the trainer runs policy generation, reference generation, reward-gradient computation, and backward in chunks of 8 samples. Losses and logged metrics are weighted by chunk size so the optimization target matches the full generated batch.
+
+In LoRA mode, the SDXL trainer does not keep a second trainable-sized reference U-Net copy for the reference branch. It temporarily disables the LoRA adapter on the wrapped U-Net when computing the frozen reference latent, which substantially reduces memory.
+
+The SDXL output directory includes the reward scale to avoid mixing runs:
+
+```text
+outputs/sdxl-turbo-lora/vggflow/pickscore/lr1e-5_bs24_ga8_steps5000_rs3000
+```
+
+The rest of this document describes the original one-step SD-Turbo VGGFlow adaptation. The same target idea is used by the SDXL trainer, but SDXL uses `StableDiffusionXLPipeline`, SDXL text/time conditioning, and one-step SDXL-Turbo latent prediction.
+
 ## 1. What This Implementation Is
 
 This repository does not contain the original multi-step VGG-Flow training loop verbatim.
@@ -31,13 +72,13 @@ Where:
 - \(\lambda\) is `reward_scale`
 - \(\eta(t)\) is a timestep-dependent multiplier controlled by `eta_mode`
 
-This high-level design is stated in [baselines/vggflow/train_lora.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:2).
+This high-level design is stated in [baselines/vggflow/train_lora.py](baselines/vggflow/train_lora.py:2).
 
-The official multi-step value-network consistency branch is explicitly omitted here because SD-Turbo training in this repo is one-step only. See [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:10).
+The official multi-step value-network consistency branch is explicitly omitted here because SD-Turbo training in this repo is one-step only. See [trainer.py](baselines/vggflow/train_lora.py:10).
 
 ## 2. Training Entrypoint and Main Hyperparameters
 
-The canonical launch script is [scripts/train/vggflow.sh](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/scripts/train/vggflow.sh:1).
+The canonical launch script is [scripts/train/vggflow.sh](scripts/train/vggflow.sh:1).
 
 Important runtime hyperparameters exposed there:
 
@@ -52,7 +93,7 @@ Important runtime hyperparameters exposed there:
 - `REWARD_MASK_THRESHOLD`
 - `UNET_REG_SCALE`
 
-These are passed through to [baselines/vggflow/train_lora.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:64).
+These are passed through to [baselines/vggflow/train_lora.py](baselines/vggflow/train_lora.py:64).
 
 ## 3. One-Step SD-Turbo Prediction
 
@@ -72,10 +113,10 @@ x_0^\theta = \Pi_{\text{turbo}}(z_t, \epsilon_\theta)
 
 In code:
 
-- UNet forward: [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:378)
-- latent projection: [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:379)
+- UNet forward: [trainer.py](baselines/vggflow/train_lora.py:378)
+- latent projection: [trainer.py](baselines/vggflow/train_lora.py:379)
 
-The actual SD-Turbo one-step projection is implemented in [src/drpo/sdturbo.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/src/drpo/sdturbo.py:30):
+The actual SD-Turbo one-step projection is implemented in [src/drpo/sdturbo.py](src/drpo/sdturbo.py:30):
 
 \[
 x_0
@@ -95,21 +136,21 @@ x_0^{\text{ref}} = \Pi_{\text{turbo}}(z_t, \epsilon_{\text{ref}})
 
 Code:
 
-- frozen reference forward: [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:381)
-- projected reference clean latent: [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:383)
+- frozen reference forward: [trainer.py](baselines/vggflow/train_lora.py:381)
+- projected reference clean latent: [trainer.py](baselines/vggflow/train_lora.py:383)
 
 This reference output is the "base flow field" that the reward gradient perturbs.
 
 ## 5. Reward Model and Differentiable Reward
 
-Reward gradient logic lives in [baselines/vggflow/reward_gradient.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/reward_gradient.py:1).
+Reward gradient logic lives in [baselines/vggflow/reward_gradient.py](baselines/vggflow/reward_gradient.py:1).
 
 The reward model is `DifferentiablePickScoreReward`, which loads:
 
 - a Hugging Face `AutoProcessor`
 - a Hugging Face `AutoModel`
 
-See [reward_gradient.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/reward_gradient.py:46).
+See [reward_gradient.py](baselines/vggflow/reward_gradient.py:46).
 
 Images are:
 
@@ -117,7 +158,7 @@ Images are:
 2. resized to the PickScore image size
 3. normalized by the processor's image mean/std
 
-See [reward_gradient.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/reward_gradient.py:90).
+See [reward_gradient.py](baselines/vggflow/reward_gradient.py:90).
 
 The reward itself is computed as a scaled cosine similarity:
 
@@ -131,7 +172,7 @@ R(I, p)
 \right\rangle
 \]
 
-This corresponds to [reward_gradient.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/reward_gradient.py:117).
+This corresponds to [reward_gradient.py](baselines/vggflow/reward_gradient.py:117).
 
 ## 6. Reward Gradient in Clean-Latent Space
 
@@ -149,7 +190,7 @@ Implementation steps:
 x_0 \leftarrow \texttt{latents.detach().float().requires\_grad\_(True)}
 \]
 
-See [reward_gradient.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/reward_gradient.py:144).
+See [reward_gradient.py](baselines/vggflow/reward_gradient.py:144).
 
 2. Decode latent to image:
 
@@ -157,7 +198,7 @@ See [reward_gradient.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselin
 I = \mathrm{decode}(x_0)
 \]
 
-See [reward_gradient.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/reward_gradient.py:163).
+See [reward_gradient.py](baselines/vggflow/reward_gradient.py:163).
 
 3. Compute reward:
 
@@ -165,7 +206,7 @@ See [reward_gradient.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselin
 R = R(I, p)
 \]
 
-See [reward_gradient.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/reward_gradient.py:164).
+See [reward_gradient.py](baselines/vggflow/reward_gradient.py:164).
 
 4. Differentiate reward w.r.t. latent:
 
@@ -173,7 +214,7 @@ See [reward_gradient.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselin
 g = \nabla_{x_0} R
 \]
 
-See [reward_gradient.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/reward_gradient.py:166).
+See [reward_gradient.py](baselines/vggflow/reward_gradient.py:166).
 
 ## 7. Gradient Clipping and Running Threshold
 
@@ -195,7 +236,7 @@ g_i \cdot \min\left(1, \frac{\tau}{\|g_i\|_2}\right)
 
 where \(\tau\) is the current clipping threshold.
 
-This is implemented in [clip_gradient_by_norm](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/reward_gradient.py:30).
+This is implemented in [clip_gradient_by_norm](baselines/vggflow/reward_gradient.py:30).
 
 The trainer updates \(\tau\) dynamically using the gathered reward-gradient norms from the current synchronized step:
 
@@ -207,8 +248,8 @@ with \(q =\) `rgrad_quantile`.
 
 Code:
 
-- gathering norms: [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:436)
-- updating threshold: [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:437)
+- gathering norms: [trainer.py](baselines/vggflow/train_lora.py:436)
+- updating threshold: [trainer.py](baselines/vggflow/train_lora.py:437)
 
 If `quantile_clipping` is disabled, the clipping function just returns the original gradient.
 
@@ -232,8 +273,8 @@ Then the gradient is taken with respect to the original \(x_0\).
 
 Code:
 
-- jitter construction: [reward_gradient.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/reward_gradient.py:145)
-- reward averaging over jitter count: [reward_gradient.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/reward_gradient.py:165)
+- jitter construction: [reward_gradient.py](baselines/vggflow/reward_gradient.py:145)
+- reward averaging over jitter count: [reward_gradient.py](baselines/vggflow/reward_gradient.py:165)
 
 Controlled by:
 
@@ -248,9 +289,9 @@ The multiplier \(\eta(t)\) is computed from `eta_mode` and
 \sigma = t / 1000
 \]
 
-in [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:340).
+in [trainer.py](baselines/vggflow/train_lora.py:340).
 
-The supported modes in [reward_gradient.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/reward_gradient.py:19) are:
+The supported modes in [reward_gradient.py](baselines/vggflow/reward_gradient.py:19) are:
 
 - `constant`
 
@@ -288,7 +329,7 @@ where:
 - \(\lambda\) is `reward_scale`
 - \(\tilde g\) is the clipped reward gradient
 
-This is implemented directly in [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:397).
+This is implemented directly in [trainer.py](baselines/vggflow/train_lora.py:397).
 
 ## 11. Training Loss
 
@@ -309,8 +350,8 @@ where \(K\) is `batchsize_gen`, the number of sampled candidates for one prompt.
 
 Code:
 
-- per-sample latent MSE: [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:399)
-- average over generated samples: [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:403)
+- per-sample latent MSE: [trainer.py](baselines/vggflow/train_lora.py:399)
+- average over generated samples: [trainer.py](baselines/vggflow/train_lora.py:403)
 
 There is also an optional reference regularizer:
 
@@ -320,7 +361,7 @@ There is also an optional reference regularizer:
 \|x_0^\theta - x_0^{\text{ref}}\|_2^2
 \]
 
-Code: [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:404).
+Code: [trainer.py](baselines/vggflow/train_lora.py:404).
 
 The total loss is:
 
@@ -332,7 +373,7 @@ The total loss is:
 
 where \(\alpha =\) `unet_reg_scale`.
 
-Code: [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:405).
+Code: [trainer.py](baselines/vggflow/train_lora.py:405).
 
 ## 12. Optional Reward Masking
 
@@ -352,8 +393,8 @@ where \(\ell_i\) is the per-sample latent regression loss.
 
 Code:
 
-- mask construction: [reward_gradient.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/reward_gradient.py:169)
-- masked reduction: [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:400)
+- mask construction: [reward_gradient.py](baselines/vggflow/reward_gradient.py:169)
+- masked reduction: [trainer.py](baselines/vggflow/train_lora.py:400)
 
 ## 13. Batch Structure
 
@@ -372,14 +413,14 @@ The loop is organized as:
 
 The important detail is that `batchsize_gen` is not a standard dataloader batch size. It is the number of generated candidates used to estimate the reward-gradient target for one prompt.
 
-Code path: [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:343).
+Code path: [trainer.py](baselines/vggflow/train_lora.py:343).
 
 ## 14. Optimization and Logging
 
 Optimization is standard AdamW with optional LoRA on top of the UNet:
 
-- LoRA wrapping: [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:229)
-- trainable parameter collection: [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:243)
+- LoRA wrapping: [trainer.py](baselines/vggflow/train_lora.py:229)
+- trainable parameter collection: [trainer.py](baselines/vggflow/train_lora.py:243)
 
 Each synchronized step logs:
 
@@ -394,7 +435,7 @@ Each synchronized step logs:
 - `eta`
 - `grad_norm_unaccumulated`
 
-See [trainer.py](/datapool/jiangzhou/CODE/Text2ImageProject/DrPO/baselines/vggflow/train_lora.py:449).
+See [trainer.py](baselines/vggflow/train_lora.py:449).
 
 ## 15. What Is Missing Relative to Multi-Step VGG-Flow
 

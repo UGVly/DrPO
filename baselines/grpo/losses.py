@@ -161,3 +161,83 @@ def neighbor_grpo_loss(
         "old_entropy": (-(old_log_probs.exp() * old_log_probs).sum()).detach(),
     }
     return policy_loss, stats
+
+
+def batched_neighbor_grpo_loss(
+    candidates: torch.Tensor,
+    current_anchors: torch.Tensor,
+    old_anchors: torch.Tensor,
+    advantages: torch.Tensor,
+    clip_range: float = 0.2,
+    max_log_ratio: float = 10.0,
+    temperature: float = 1.0,
+    reduction: DistanceReduction = "mean",
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """Vectorized Neighbor-GRPO loss for batched prompts and anchors.
+
+    Args:
+        candidates: ``[B, G, ...]`` candidate latents.
+        current_anchors: ``[B, A, ...]`` trainable anchor latents.
+        old_anchors: ``[B, A, ...]`` frozen rollout anchor latents.
+        advantages: ``[B, G]`` prompt-local advantages.
+    """
+
+    if candidates.ndim < 3:
+        raise ValueError(f"candidates must have shape [B, G, ...], got {tuple(candidates.shape)}")
+    if current_anchors.ndim != candidates.ndim:
+        raise ValueError(
+            "current_anchors must have shape [B, A, ...] with the same rank as candidates; "
+            f"got candidates={tuple(candidates.shape)} current_anchors={tuple(current_anchors.shape)}"
+        )
+    if old_anchors.shape != current_anchors.shape:
+        raise ValueError(
+            f"old_anchors shape must match current_anchors, got {tuple(old_anchors.shape)} vs {tuple(current_anchors.shape)}"
+        )
+    if current_anchors.shape[0] != candidates.shape[0] or current_anchors.shape[2:] != candidates.shape[2:]:
+        raise ValueError(
+            "current_anchors must share batch and latent dimensions with candidates; "
+            f"got candidates={tuple(candidates.shape)} current_anchors={tuple(current_anchors.shape)}"
+        )
+    if advantages.shape != candidates.shape[:2]:
+        raise ValueError(f"advantages must have shape [B, G], got {tuple(advantages.shape)} vs {tuple(candidates.shape[:2])}")
+    if clip_range <= 0:
+        raise ValueError(f"clip_range must be > 0, got {clip_range}")
+    if temperature <= 0:
+        raise ValueError(f"temperature must be > 0, got {temperature}")
+
+    candidate_flat = candidates.detach().float().flatten(2)
+    current_flat = current_anchors.float().flatten(2)
+    old_flat = old_anchors.detach().float().flatten(2)
+
+    current_diff = candidate_flat[:, None, :, :] - current_flat[:, :, None, :]
+    old_diff = candidate_flat[:, None, :, :] - old_flat[:, :, None, :]
+    if reduction == "mean":
+        current_distances = current_diff.square().mean(dim=-1)
+        old_distances = old_diff.square().mean(dim=-1)
+    elif reduction == "sum":
+        current_distances = current_diff.square().sum(dim=-1)
+        old_distances = old_diff.square().sum(dim=-1)
+    else:
+        raise ValueError(f"Unsupported distance reduction: {reduction}")
+
+    current_log_probs = torch.log_softmax(-current_distances / float(temperature), dim=-1)
+    old_log_probs = torch.log_softmax(-old_distances / float(temperature), dim=-1).detach()
+    log_ratio = (current_log_probs - old_log_probs).clamp(-float(max_log_ratio), float(max_log_ratio))
+    ratio = torch.exp(log_ratio)
+    clipped_ratio = torch.clamp(ratio, 1.0 - float(clip_range), 1.0 + float(clip_range))
+    adv = advantages.detach().to(device=candidates.device, dtype=torch.float32).unsqueeze(1)
+
+    surrogate = torch.minimum(ratio * adv, clipped_ratio * adv)
+    policy_loss = -surrogate.mean()
+    approx_kl = (ratio - 1.0 - log_ratio).mean()
+    entropy = -(current_log_probs.exp() * current_log_probs).sum(dim=-1).mean()
+    stats = {
+        "ratio_mean": ratio.detach().mean(),
+        "ratio_std": ratio.detach().std(dim=-1, unbiased=False).mean(),
+        "clipfrac": ratio.detach().ne(clipped_ratio.detach()).float().mean(),
+        "approx_kl": approx_kl.detach(),
+        "approx_kl_loss": approx_kl,
+        "entropy": entropy.detach(),
+        "old_entropy": (-(old_log_probs.exp() * old_log_probs).sum(dim=-1).mean()).detach(),
+    }
+    return policy_loss, stats

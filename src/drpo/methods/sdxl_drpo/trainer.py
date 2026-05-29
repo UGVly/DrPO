@@ -30,7 +30,15 @@ from tqdm.auto import tqdm
 from transformers import AutoImageProcessor, AutoModel
 
 from drpo.data import Batch, PromptDataset, collate_preference_batch
-from drpo.drift import drift_loss, pairwise_l2
+from drpo.drift import (
+    drift_loss,
+    pairwise_l2,
+    reward_contrastive_kernel_drift_loss,
+    reward_advantage_sign_weighted_binary_drift_loss,
+    reward_kernel_drift_loss,
+    reward_topk_contrastive_kernel_drift_loss,
+    reward_topk_weighted_binary_drift_loss,
+)
 from drpo.paths import project_root, require_local_path
 from drpo.rewards import build_choice_selectors, resolve_choice_model_weights, resolve_choice_models, score_reward_ensemble
 from drpo.utils.tensors import add_rank_selection_stats, safe_std, select_disjoint_pref_indices
@@ -58,7 +66,7 @@ class SDXLDrPOConfig:
     batchsize_gen: int = 8
     num_inference_steps: int = 1
     guidance_scale: float = 0.0
-    max_train_steps: int = 1000
+    max_train_steps: int = 5000
     gradient_accumulation_steps: int = 8
     dataloader_num_workers: int = 2
     max_train_samples: int | None = None
@@ -94,7 +102,19 @@ class SDXLDrPOConfig:
     drifting_ref_weight: float = 3000.0
     drifting_ref_neg_weight: float = 3000.0
     drifting_ref_loss_weight: float = 0.2
+    drifting_objective: str = "binary"
+    drpo_awr_alpha: float = 1.0
+    drpo_awr_logit_clip: float = 20.0
+    drpo_awr_top_fraction: float = 0.5
+    drpo_awr_force_scale: float = 1.0
+    drpo_awr_loss_weight: float = 1.0
     ref_model_l2_weight: float = 0.02
+    feature_diversity_weight: float = 0.0
+    feature_diversity_margin_scale: float = 0.8
+    vgg_anchor_weight: float = 0.0
+    vgg_anchor_alpha: float = 1.0
+    vgg_anchor_advantage_clip: float = 2.0
+    vgg_anchor_min_score_weight: float = 0.0
     num_pos_images: int = 2
     num_neg_images: int = 2
     online_feature_top_fraction: float = 1.0
@@ -390,6 +410,66 @@ def _feature_set(features: torch.Tensor) -> torch.Tensor:
     return features.reshape(1, -1, features.shape[-1])
 
 
+def _mean_offdiag_pairwise_l2(features: torch.Tensor) -> torch.Tensor:
+    if features.ndim != 3:
+        raise ValueError(f"Expected feature tensor with shape (B, N, D), got {tuple(features.shape)}.")
+    count = features.shape[1]
+    if count < 2:
+        return features.new_zeros(())
+    distances = pairwise_l2(features, features)
+    keep = ~torch.eye(count, device=features.device, dtype=torch.bool)
+    return distances[:, keep].mean()
+
+
+def _compute_vgg_anchor_terms(
+    generated_latents: torch.Tensor,
+    reference_latents: torch.Tensor,
+    scores: torch.Tensor,
+    config: SDXLDrPOConfig,
+) -> dict[str, torch.Tensor]:
+    zero = generated_latents.new_zeros(())
+    if config.vgg_anchor_weight <= 0:
+        return {
+            "vgg_anchor_loss": zero,
+            "vgg_anchor_adv_mean": zero.detach(),
+            "vgg_anchor_adv_pos_frac": zero.detach(),
+            "vgg_anchor_score_weight_mean": zero.detach(),
+            "vgg_anchor_score_weight_max": zero.detach(),
+            "vgg_anchor_target_ref_l2": zero.detach(),
+        }
+    if generated_latents.shape != reference_latents.shape:
+        raise ValueError(
+            "VGG anchor expects generated/reference latent shapes to match, got "
+            f"{tuple(generated_latents.shape)} and {tuple(reference_latents.shape)}."
+        )
+    if scores.ndim != 1 or scores.numel() != generated_latents.shape[0]:
+        raise ValueError(
+            "VGG anchor expects one score per generated latent, got "
+            f"scores={tuple(scores.shape)}, latents={tuple(generated_latents.shape)}."
+        )
+
+    score_values = scores.detach().float()
+    advantages = (score_values - score_values.mean()) / safe_std(score_values, dim=0).clamp_min(1e-6)
+    clipped = advantages.clamp(-config.vgg_anchor_advantage_clip, config.vgg_anchor_advantage_clip)
+    positive_weight = clipped.clamp_min(0.0) / config.vgg_anchor_advantage_clip
+    min_weight = float(config.vgg_anchor_min_score_weight)
+    score_weights = min_weight + (1.0 - min_weight) * positive_weight
+
+    reference = reference_latents.detach().float()
+    generated_stop = generated_latents.detach().float()
+    target_latents = reference + config.vgg_anchor_alpha * score_weights.view(-1, 1, 1, 1) * (generated_stop - reference)
+    per_sample_loss = (generated_latents.float() - target_latents).square().flatten(1).mean(dim=1)
+
+    return {
+        "vgg_anchor_loss": per_sample_loss.mean(),
+        "vgg_anchor_adv_mean": advantages.mean().detach(),
+        "vgg_anchor_adv_pos_frac": (advantages > 0).float().mean().detach(),
+        "vgg_anchor_score_weight_mean": score_weights.mean().detach(),
+        "vgg_anchor_score_weight_max": score_weights.max().detach(),
+        "vgg_anchor_target_ref_l2": (target_latents - reference).square().flatten(1).mean(dim=1).mean().detach(),
+    }
+
+
 def _active_feature_keys(config: SDXLDrPOConfig) -> tuple[str, ...]:
     if config.feature_extractor == "mae":
         return config.mae_feature_keys
@@ -458,57 +538,150 @@ def _compute_prompt_terms(
     feature_keys: tuple[str, ...],
     generated_features: dict[str, torch.Tensor],
     reference_features: dict[str, torch.Tensor],
-    positive_features: dict[str, torch.Tensor],
-    negative_features: dict[str, torch.Tensor],
+    positive_features: dict[str, torch.Tensor] | None,
+    negative_features: dict[str, torch.Tensor] | None,
+    scores: torch.Tensor,
     config: SDXLDrPOConfig,
 ) -> dict[str, torch.Tensor]:
     pref_losses = []
     ref_losses = []
+    drpo_awr_losses = []
+    awr_effective_counts = []
+    awr_weight_max_terms = []
+    awr_weight_min_terms = []
     feature_l2_terms = []
+    diversity_losses = []
+    generated_diversity_terms = []
+    reference_diversity_terms = []
     d_pos_terms = []
     d_neg_terms = []
     d_ref_terms = []
     for key in feature_keys:
         generated = _feature_set(generated_features[key]).float()
         reference = _feature_set(reference_features[key]).float()
-        positive = _feature_set(positive_features[key]).float()
-        negative = _feature_set(negative_features[key]).float()
-        pref_loss_vec, _ = drift_loss(
-            generated,
-            positive,
-            negative,
-            positive_weight=config.drifting_pos_weight,
-            negative_weight=config.drifting_neg_weight,
-            radii=config.drifting_pref_r_list,
-            kernel=config.drifting_kernel,
-        )
-        ref_loss_vec, _ = drift_loss(
-            generated,
-            reference,
-            generated.detach(),
-            positive_weight=config.drifting_ref_weight,
-            negative_weight=config.drifting_ref_neg_weight,
-            radii=config.drifting_ref_r_list,
-            mask_negative_self=True,
-            kernel=config.drifting_kernel,
-        )
-        pref_losses.append(pref_loss_vec.mean())
-        ref_losses.append(ref_loss_vec.mean())
+        if config.drifting_objective in {"drpo-awr", "drpo-awr-contrast", "drpo-awr-topk", "drpo-awr-hard", "drpo-awr-advsign"}:
+            if config.drifting_objective == "drpo-awr-hard":
+                drpo_awr_loss_vec, awr_info = reward_topk_weighted_binary_drift_loss(
+                    generated,
+                    reference,
+                    scores,
+                    reward_alpha=config.drpo_awr_alpha,
+                    positive_weight=config.drifting_pos_weight,
+                    negative_weight=config.drifting_neg_weight,
+                    radii=config.drifting_pref_r_list,
+                    kernel=config.drifting_kernel,
+                    reward_logit_clip=config.drpo_awr_logit_clip,
+                    top_fraction=config.drpo_awr_top_fraction,
+                )
+            elif config.drifting_objective == "drpo-awr-advsign":
+                drpo_awr_loss_vec, awr_info = reward_advantage_sign_weighted_binary_drift_loss(
+                    generated,
+                    reference,
+                    scores,
+                    reward_alpha=config.drpo_awr_alpha,
+                    positive_weight=config.drifting_pos_weight,
+                    negative_weight=config.drifting_neg_weight,
+                    radii=config.drifting_pref_r_list,
+                    kernel=config.drifting_kernel,
+                    reward_logit_clip=config.drpo_awr_logit_clip,
+                )
+            elif config.drifting_objective == "drpo-awr-topk":
+                drpo_awr_loss_vec, awr_info = reward_topk_contrastive_kernel_drift_loss(
+                    generated,
+                    reference,
+                    scores,
+                    reward_alpha=config.drpo_awr_alpha,
+                    radii=config.drifting_pref_r_list,
+                    kernel=config.drifting_kernel,
+                    reward_logit_clip=config.drpo_awr_logit_clip,
+                    top_fraction=config.drpo_awr_top_fraction,
+                    force_scale=config.drpo_awr_force_scale,
+                )
+            else:
+                awr_loss_fn = reward_contrastive_kernel_drift_loss if config.drifting_objective == "drpo-awr-contrast" else reward_kernel_drift_loss
+                drpo_awr_loss_vec, awr_info = awr_loss_fn(
+                    generated,
+                    reference,
+                    scores,
+                    reward_alpha=config.drpo_awr_alpha,
+                    radii=config.drifting_pref_r_list,
+                    kernel=config.drifting_kernel,
+                    reward_logit_clip=config.drpo_awr_logit_clip,
+                )
+            drpo_awr_loss = drpo_awr_loss_vec.mean()
+            pref_losses.append(drpo_awr_loss)
+            ref_losses.append(drpo_awr_loss.new_zeros(()))
+            drpo_awr_losses.append(drpo_awr_loss)
+            awr_effective_counts.append(awr_info["reward_kernel_effective_count"])
+            awr_weight_max_terms.append(awr_info["reward_kernel_weight_max"])
+            awr_weight_min_terms.append(awr_info["reward_kernel_weight_min"])
+        else:
+            if positive_features is None or negative_features is None:
+                raise ValueError("Binary DrPO objective requires positive and negative features.")
+            positive = _feature_set(positive_features[key]).float()
+            negative = _feature_set(negative_features[key]).float()
+            pref_loss_vec, _ = drift_loss(
+                generated,
+                positive,
+                negative,
+                positive_weight=config.drifting_pos_weight,
+                negative_weight=config.drifting_neg_weight,
+                radii=config.drifting_pref_r_list,
+                kernel=config.drifting_kernel,
+            )
+            ref_loss_vec, _ = drift_loss(
+                generated,
+                reference,
+                generated.detach(),
+                positive_weight=config.drifting_ref_weight,
+                negative_weight=config.drifting_ref_neg_weight,
+                radii=config.drifting_ref_r_list,
+                mask_negative_self=True,
+                kernel=config.drifting_kernel,
+            )
+            pref_losses.append(pref_loss_vec.mean())
+            ref_losses.append(ref_loss_vec.mean())
+            d_pos_terms.append(pairwise_l2(generated.detach(), positive.detach()).mean())
+            d_neg_terms.append(pairwise_l2(generated.detach(), negative.detach()).mean())
         feature_l2_terms.append(F.mse_loss(generated, reference))
-        d_pos_terms.append(pairwise_l2(generated.detach(), positive.detach()).mean())
-        d_neg_terms.append(pairwise_l2(generated.detach(), negative.detach()).mean())
+        if config.feature_diversity_weight > 0:
+            generated_diversity = _mean_offdiag_pairwise_l2(generated)
+            reference_diversity = _mean_offdiag_pairwise_l2(reference.detach())
+            diversity_target = (config.feature_diversity_margin_scale * reference_diversity).detach().clamp_min(1e-8)
+            diversity_losses.append(F.relu((diversity_target - generated_diversity) / diversity_target).square())
+            generated_diversity_terms.append(generated_diversity.detach())
+            reference_diversity_terms.append(reference_diversity.detach())
         d_ref_terms.append(pairwise_l2(generated.detach(), reference.detach()).mean())
     pref_loss = torch.stack(pref_losses).mean()
     ref_loss = torch.stack(ref_losses).mean()
+    drpo_awr_loss = torch.stack(drpo_awr_losses).mean() if drpo_awr_losses else pref_loss.new_zeros(())
+    awr_effective_count = torch.stack(awr_effective_counts).mean() if awr_effective_counts else pref_loss.new_zeros(())
+    awr_weight_max = torch.stack(awr_weight_max_terms).mean() if awr_weight_max_terms else pref_loss.new_zeros(())
+    awr_weight_min = torch.stack(awr_weight_min_terms).mean() if awr_weight_min_terms else pref_loss.new_zeros(())
     feature_l2 = torch.stack(feature_l2_terms).mean()
-    loss = pref_loss + config.drifting_ref_loss_weight * ref_loss
+    diversity_loss = torch.stack(diversity_losses).mean() if diversity_losses else pref_loss.new_zeros(())
+    generated_diversity = torch.stack(generated_diversity_terms).mean() if generated_diversity_terms else pref_loss.new_zeros(())
+    reference_diversity = torch.stack(reference_diversity_terms).mean() if reference_diversity_terms else pref_loss.new_zeros(())
+    if config.drifting_objective in {"drpo-awr", "drpo-awr-contrast", "drpo-awr-topk", "drpo-awr-hard", "drpo-awr-advsign"}:
+        loss = config.drpo_awr_loss_weight * pref_loss + config.feature_diversity_weight * diversity_loss
+    else:
+        loss = pref_loss + config.drifting_ref_loss_weight * ref_loss + config.feature_diversity_weight * diversity_loss
     return {
         "loss": loss,
         "pref_loss": pref_loss.detach(),
         "ref_loss": ref_loss.detach(),
+        "drpo_awr_loss": drpo_awr_loss.detach(),
+        "drpo_awr_loss_weighted": (config.drpo_awr_loss_weight * drpo_awr_loss).detach(),
+        "drpo_awr_loss_weight": pref_loss.new_tensor(float(config.drpo_awr_loss_weight)).detach(),
+        "drpo_awr_effective_count": awr_effective_count.detach(),
+        "drpo_awr_weight_max": awr_weight_max.detach(),
+        "drpo_awr_weight_min": awr_weight_min.detach(),
+        "feature_diversity_loss": diversity_loss.detach(),
+        "feature_generated_diversity": generated_diversity.detach(),
+        "feature_reference_diversity": reference_diversity.detach(),
         "feature_l2": feature_l2.detach(),
-        "d_pos": torch.stack(d_pos_terms).mean().detach(),
-        "d_neg": torch.stack(d_neg_terms).mean().detach(),
+        "d_pos": torch.stack(d_pos_terms).mean().detach() if d_pos_terms else pref_loss.new_zeros(()).detach(),
+        "d_neg": torch.stack(d_neg_terms).mean().detach() if d_neg_terms else pref_loss.new_zeros(()).detach(),
         "d_ref": torch.stack(d_ref_terms).mean().detach(),
     }
 
@@ -529,6 +702,16 @@ def _save_checkpoint(accelerator: Accelerator, unet, config: SDXLDrPOConfig, che
             "created_at": datetime.now().isoformat(),
             "model_type": f"sdxl-turbo-drpo-{config.feature_extractor}",
             "feature_extractor": config.feature_extractor,
+            "drifting_objective": config.drifting_objective,
+            "drpo_awr_alpha": config.drpo_awr_alpha,
+            "drpo_awr_logit_clip": config.drpo_awr_logit_clip,
+            "drpo_awr_top_fraction": config.drpo_awr_top_fraction,
+            "drpo_awr_force_scale": config.drpo_awr_force_scale,
+            "drpo_awr_loss_weight": config.drpo_awr_loss_weight,
+            "vgg_anchor_weight": config.vgg_anchor_weight,
+            "vgg_anchor_alpha": config.vgg_anchor_alpha,
+            "vgg_anchor_advantage_clip": config.vgg_anchor_advantage_clip,
+            "vgg_anchor_min_score_weight": config.vgg_anchor_min_score_weight,
             "contains_accelerate_state": False,
             "contains_model_state": True,
             "model_variant": config.model_variant,
@@ -593,6 +776,30 @@ def _validate_config(config: SDXLDrPOConfig) -> None:
             raise ValueError("teacher_feature_timestep must be >= 0.")
         if config.teacher_feature_pool_size < 1:
             raise ValueError("teacher_feature_pool_size must be >= 1.")
+    if config.feature_diversity_weight < 0:
+        raise ValueError("feature_diversity_weight must be >= 0.")
+    if config.feature_diversity_margin_scale <= 0:
+        raise ValueError("feature_diversity_margin_scale must be > 0.")
+    if config.drifting_objective not in {"binary", "drpo-awr", "drpo-awr-contrast", "drpo-awr-topk", "drpo-awr-hard", "drpo-awr-advsign"}:
+        raise ValueError("drifting_objective must be one of 'binary', 'drpo-awr', 'drpo-awr-contrast', 'drpo-awr-topk', 'drpo-awr-hard', or 'drpo-awr-advsign'.")
+    if config.drpo_awr_alpha <= 0:
+        raise ValueError("drpo_awr_alpha must be > 0.")
+    if config.drpo_awr_logit_clip < 0:
+        raise ValueError("drpo_awr_logit_clip must be >= 0.")
+    if not (0 < config.drpo_awr_top_fraction <= 1):
+        raise ValueError("drpo_awr_top_fraction must be in (0, 1].")
+    if config.drpo_awr_force_scale <= 0:
+        raise ValueError("drpo_awr_force_scale must be > 0.")
+    if config.drpo_awr_loss_weight <= 0:
+        raise ValueError("drpo_awr_loss_weight must be > 0.")
+    if config.vgg_anchor_weight < 0:
+        raise ValueError("vgg_anchor_weight must be >= 0.")
+    if config.vgg_anchor_alpha < 0:
+        raise ValueError("vgg_anchor_alpha must be >= 0.")
+    if config.vgg_anchor_advantage_clip <= 0:
+        raise ValueError("vgg_anchor_advantage_clip must be > 0.")
+    if not (0 <= config.vgg_anchor_min_score_weight <= 1):
+        raise ValueError("vgg_anchor_min_score_weight must be in [0, 1].")
 
 
 def train(config: SDXLDrPOConfig) -> None:
@@ -750,9 +957,12 @@ def train(config: SDXLDrPOConfig) -> None:
                         num_neg=config.num_neg_images,
                         feature_top_fraction=config.online_feature_top_fraction,
                     )
+                    if config.drifting_objective in {"drpo-awr", "drpo-awr-contrast", "drpo-awr-topk", "drpo-awr-hard", "drpo-awr-advsign"}:
+                        feature_top_idx = torch.arange(scores.numel(), device=scores.device, dtype=torch.long)
                     rank_info = add_rank_selection_stats(reward_info, scores, best_idx, worst_idx, feature_top_idx, prefix="online_reward")
                     feature_generated_latents = generated_latents.index_select(0, feature_top_idx)
                     feature_reference_latents = reference_latents.index_select(0, feature_top_idx)
+                    feature_scores = scores.index_select(0, feature_top_idx).detach()
                     positive_latents = generated_latents.index_select(0, best_idx).detach()
                     negative_latents = generated_latents.index_select(0, worst_idx).detach()
 
@@ -761,13 +971,18 @@ def train(config: SDXLDrPOConfig) -> None:
                         generated_images = _decode_latents_to_tensor(pipe.vae, feature_generated_latents, chunk_size=config.vae_decode_chunk_size)
                         with torch.no_grad():
                             reference_images = _decode_latents_to_tensor(pipe.vae, feature_reference_latents, chunk_size=config.vae_decode_chunk_size)
-                            positive_images = _decode_latents_to_tensor(pipe.vae, positive_latents, chunk_size=config.vae_decode_chunk_size)
-                            negative_images = _decode_latents_to_tensor(pipe.vae, negative_latents, chunk_size=config.vae_decode_chunk_size)
+                            if config.drifting_objective == "binary":
+                                positive_images = _decode_latents_to_tensor(pipe.vae, positive_latents, chunk_size=config.vae_decode_chunk_size)
+                                negative_images = _decode_latents_to_tensor(pipe.vae, negative_latents, chunk_size=config.vae_decode_chunk_size)
                         generated_features = extractor.vector_features(generated_images, config.mae_feature_keys)
                         with torch.no_grad():
                             reference_features = extractor.vector_features(reference_images, config.mae_feature_keys)
-                            positive_features = extractor.vector_features(positive_images, config.mae_feature_keys)
-                            negative_features = extractor.vector_features(negative_images, config.mae_feature_keys)
+                            if config.drifting_objective == "binary":
+                                positive_features = extractor.vector_features(positive_images, config.mae_feature_keys)
+                                negative_features = extractor.vector_features(negative_images, config.mae_feature_keys)
+                            else:
+                                positive_features = None
+                                negative_features = None
                     else:
                         add_time_ids = _add_time_ids(pipe, config.batchsize_gen, config.resolution, accelerator.device, prompt_embeds.dtype)
                         feature_prompt_embeds, feature_pooled_prompt_embeds, feature_add_time_ids = _select_condition(
@@ -775,18 +990,6 @@ def train(config: SDXLDrPOConfig) -> None:
                             pooled_prompt_embeds,
                             add_time_ids,
                             feature_top_idx,
-                        )
-                        pos_prompt_embeds, pos_pooled_prompt_embeds, pos_add_time_ids = _select_condition(
-                            prompt_embeds,
-                            pooled_prompt_embeds,
-                            add_time_ids,
-                            best_idx,
-                        )
-                        neg_prompt_embeds, neg_pooled_prompt_embeds, neg_add_time_ids = _select_condition(
-                            prompt_embeds,
-                            pooled_prompt_embeds,
-                            add_time_ids,
-                            worst_idx,
                         )
                         generated_features = extractor.vector_features(
                             feature_generated_latents,
@@ -802,32 +1005,55 @@ def train(config: SDXLDrPOConfig) -> None:
                             add_time_ids=feature_add_time_ids,
                             require_grad=False,
                         )
-                        positive_features = extractor.vector_features(
-                            positive_latents,
-                            prompt_embeds=pos_prompt_embeds,
-                            pooled_prompt_embeds=pos_pooled_prompt_embeds,
-                            add_time_ids=pos_add_time_ids,
-                            require_grad=False,
-                        )
-                        negative_features = extractor.vector_features(
-                            negative_latents,
-                            prompt_embeds=neg_prompt_embeds,
-                            pooled_prompt_embeds=neg_pooled_prompt_embeds,
-                            add_time_ids=neg_add_time_ids,
-                            require_grad=False,
-                        )
+                        if config.drifting_objective == "binary":
+                            pos_prompt_embeds, pos_pooled_prompt_embeds, pos_add_time_ids = _select_condition(
+                                prompt_embeds,
+                                pooled_prompt_embeds,
+                                add_time_ids,
+                                best_idx,
+                            )
+                            neg_prompt_embeds, neg_pooled_prompt_embeds, neg_add_time_ids = _select_condition(
+                                prompt_embeds,
+                                pooled_prompt_embeds,
+                                add_time_ids,
+                                worst_idx,
+                            )
+                            positive_features = extractor.vector_features(
+                                positive_latents,
+                                prompt_embeds=pos_prompt_embeds,
+                                pooled_prompt_embeds=pos_pooled_prompt_embeds,
+                                add_time_ids=pos_add_time_ids,
+                                require_grad=False,
+                            )
+                            negative_features = extractor.vector_features(
+                                negative_latents,
+                                prompt_embeds=neg_prompt_embeds,
+                                pooled_prompt_embeds=neg_pooled_prompt_embeds,
+                                add_time_ids=neg_add_time_ids,
+                                require_grad=False,
+                            )
+                        else:
+                            positive_features = None
+                            negative_features = None
                     terms = _compute_prompt_terms(
                         feature_keys,
                         generated_features,
                         reference_features,
                         positive_features,
                         negative_features,
+                        feature_scores,
                         config,
                     )
                     ref_l2 = F.mse_loss(feature_generated_latents.float(), feature_reference_latents.float())
-                    loss_i = terms["loss"] + config.ref_model_l2_weight * ref_l2
+                    anchor_terms = _compute_vgg_anchor_terms(
+                        feature_generated_latents,
+                        feature_reference_latents,
+                        feature_scores,
+                        config,
+                    )
+                    loss_i = terms["loss"] + config.ref_model_l2_weight * ref_l2 + config.vgg_anchor_weight * anchor_terms["vgg_anchor_loss"]
                     sample_losses.append(loss_i)
-                    for key, value in {**terms, **rank_info, "ref_model_l2": ref_l2.detach()}.items():
+                    for key, value in {**terms, **anchor_terms, **rank_info, "ref_model_l2": ref_l2.detach()}.items():
                         if torch.is_tensor(value):
                             logs.setdefault(key, []).append(value.detach().float())
                 if not sample_losses:
@@ -879,7 +1105,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batchsize_gen", type=int, default=8)
     parser.add_argument("--num_inference_steps", type=int, default=1)
     parser.add_argument("--guidance_scale", type=float, default=0.0)
-    parser.add_argument("--max_train_steps", type=int, default=1000)
+    parser.add_argument("--max_train_steps", type=int, default=5000)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=8)
     parser.add_argument("--dataloader_num_workers", type=int, default=2)
     parser.add_argument("--max_train_samples", type=int, default=None)
@@ -915,7 +1141,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--drifting_ref_weight", type=float, default=3000.0)
     parser.add_argument("--drifting_ref_neg_weight", type=float, default=3000.0)
     parser.add_argument("--drifting_ref_loss_weight", type=float, default=0.2)
+    parser.add_argument("--drifting_objective", choices=["binary", "drpo-awr", "drpo-awr-contrast", "drpo-awr-topk", "drpo-awr-hard", "drpo-awr-advsign"], default="binary")
+    parser.add_argument("--drpo_awr_alpha", type=float, default=1.0)
+    parser.add_argument("--drpo_awr_logit_clip", type=float, default=20.0)
+    parser.add_argument("--drpo_awr_top_fraction", type=float, default=0.5)
+    parser.add_argument("--drpo_awr_force_scale", type=float, default=1.0)
+    parser.add_argument("--drpo_awr_loss_weight", type=float, default=1.0)
     parser.add_argument("--ref_model_l2_weight", type=float, default=0.02)
+    parser.add_argument("--feature_diversity_weight", type=float, default=0.0)
+    parser.add_argument("--feature_diversity_margin_scale", type=float, default=0.8)
+    parser.add_argument("--vgg_anchor_weight", type=float, default=0.0)
+    parser.add_argument("--vgg_anchor_alpha", type=float, default=1.0)
+    parser.add_argument("--vgg_anchor_advantage_clip", type=float, default=2.0)
+    parser.add_argument("--vgg_anchor_min_score_weight", type=float, default=0.0)
     parser.add_argument("--num_pos_images", type=int, default=2)
     parser.add_argument("--num_neg_images", type=int, default=2)
     parser.add_argument("--online_feature_top_fraction", type=float, default=1.0)
@@ -981,7 +1219,19 @@ def parse_config(argv: list[str] | None = None) -> SDXLDrPOConfig:
         drifting_ref_weight=args.drifting_ref_weight,
         drifting_ref_neg_weight=args.drifting_ref_neg_weight,
         drifting_ref_loss_weight=args.drifting_ref_loss_weight,
+        drifting_objective=args.drifting_objective,
+        drpo_awr_alpha=args.drpo_awr_alpha,
+        drpo_awr_logit_clip=args.drpo_awr_logit_clip,
+        drpo_awr_top_fraction=args.drpo_awr_top_fraction,
+        drpo_awr_force_scale=args.drpo_awr_force_scale,
+        drpo_awr_loss_weight=args.drpo_awr_loss_weight,
         ref_model_l2_weight=args.ref_model_l2_weight,
+        feature_diversity_weight=args.feature_diversity_weight,
+        feature_diversity_margin_scale=args.feature_diversity_margin_scale,
+        vgg_anchor_weight=args.vgg_anchor_weight,
+        vgg_anchor_alpha=args.vgg_anchor_alpha,
+        vgg_anchor_advantage_clip=args.vgg_anchor_advantage_clip,
+        vgg_anchor_min_score_weight=args.vgg_anchor_min_score_weight,
         num_pos_images=args.num_pos_images,
         num_neg_images=args.num_neg_images,
         online_feature_top_fraction=args.online_feature_top_fraction,

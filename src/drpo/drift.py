@@ -75,7 +75,14 @@ def kernel_logits(
     raise AssertionError(f"Unhandled drift kernel: {kernel}")
 
 
-def _as_weight(batch: int, count: int, value: float, device, dtype) -> torch.Tensor:
+def _as_weight(batch: int, count: int, value: float | torch.Tensor, device, dtype) -> torch.Tensor:
+    if torch.is_tensor(value):
+        weight = value.to(device=device, dtype=dtype)
+        if weight.ndim == 1:
+            weight = weight.unsqueeze(0).expand(batch, -1)
+        if weight.shape != (batch, count):
+            raise ValueError(f"Expected weight with shape {(batch, count)}, got {tuple(weight.shape)}.")
+        return weight
     return torch.full((batch, count), float(value), device=device, dtype=dtype)
 
 
@@ -176,6 +183,527 @@ def drift_loss(
 
     goal = (old_scaled + force).detach()
     loss = ((generated / scale_per_dim - goal) ** 2).mean(dim=(-1, -2))
+    return loss, info
+
+
+def reward_kernel_drift_loss(
+    generated: torch.Tensor,
+    reference: torch.Tensor,
+    scores: torch.Tensor,
+    *,
+    reward_alpha: float,
+    radii: Sequence[float],
+    kernel: str = "laplacian",
+    reward_logit_clip: float = 20.0,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """Compute reward-weighted per-sample drift without binary pos/neg labels.
+
+    For every generated feature ``x``, the drift direction follows:
+
+      reward-weighted mean over generated samples
+      - x
+      + kernel mean over reference samples
+      - unweighted kernel mean over generated samples
+
+    The reward weights are ``exp(score / reward_alpha)`` inside the kernel
+    normalization. Targets are computed from detached features, matching
+    ``drift_loss``'s stop-gradient force construction.
+    """
+    if reward_alpha <= 0:
+        raise ValueError(f"reward_alpha must be > 0, got {reward_alpha}.")
+    generated = generated.float()
+    reference = reference.float()
+    if generated.ndim != 3 or reference.ndim != 3:
+        raise ValueError("generated and reference must be rank-3 tensors.")
+    if generated.shape != reference.shape:
+        raise ValueError(
+            "reward_kernel_drift_loss expects generated and reference to have "
+            f"the same shape, got {tuple(generated.shape)} and {tuple(reference.shape)}."
+        )
+    batch, num_generated, dim = generated.shape
+    scores = scores.to(device=generated.device, dtype=generated.dtype)
+    if scores.ndim == 1:
+        scores = scores.unsqueeze(0)
+    if scores.shape != (batch, num_generated):
+        raise ValueError(f"Expected scores with shape {(batch, num_generated)}, got {tuple(scores.shape)}.")
+
+    old_generated = generated.detach()
+    old_reference = reference.detach()
+    targets = torch.cat([old_generated, old_reference], dim=1)
+    distances = pairwise_l2(old_generated, targets)
+    scale = distances.mean().clamp_min(1e-3)
+    scale_per_dim = (scale / math.sqrt(dim)).clamp_min(1e-3)
+
+    old_scaled = old_generated / scale_per_dim
+    reference_scaled = old_reference / scale_per_dim
+    force = torch.zeros_like(old_scaled)
+    normalized_kernel = normalize_drift_kernel(kernel)
+
+    reward_logits = scores / float(reward_alpha)
+    reward_logits = reward_logits - reward_logits.max(dim=-1, keepdim=True).values
+    if reward_logit_clip > 0:
+        reward_logits = reward_logits.clamp(min=-float(reward_logit_clip), max=float(reward_logit_clip))
+    reward_probs = torch.softmax(reward_logits, dim=-1)
+    reward_effective_count = (1.0 / reward_probs.square().sum(dim=-1).clamp_min(1e-8)).mean()
+
+    info = {
+        "feature_scale": scale.detach(),
+        "feature_scale_per_dim": scale_per_dim.detach(),
+        "drift_kernel": generated.new_tensor(float(DRIFT_KERNELS.index(normalized_kernel))),
+        "reward_kernel_alpha": generated.new_tensor(float(reward_alpha)),
+        "reward_kernel_effective_count": reward_effective_count.detach(),
+        "reward_kernel_weight_max": reward_probs.max(dim=-1).values.mean().detach(),
+        "reward_kernel_weight_min": reward_probs.min(dim=-1).values.mean().detach(),
+    }
+
+    for radius in radii:
+        generated_logits = kernel_logits(
+            old_generated,
+            old_generated,
+            radius=float(radius),
+            kernel=kernel,
+            scale=scale,
+        )
+        reference_logits = kernel_logits(
+            old_generated,
+            old_reference,
+            radius=float(radius),
+            kernel=kernel,
+            scale=scale,
+        )
+        reward_affinity = torch.softmax(generated_logits + reward_logits[:, None, :], dim=-1)
+        generated_affinity = torch.softmax(generated_logits, dim=-1)
+        reference_affinity = torch.softmax(reference_logits, dim=-1)
+
+        reward_mean = torch.einsum("bnm,bmd->bnd", reward_affinity, old_scaled)
+        generated_mean = torch.einsum("bnm,bmd->bnd", generated_affinity, old_scaled)
+        reference_mean = torch.einsum("bnm,bmd->bnd", reference_affinity, reference_scaled)
+        force_radius = reward_mean - old_scaled + reference_mean - generated_mean
+        rms = force_radius.pow(2).mean().clamp_min(1e-8).sqrt()
+        info[f"reward_kernel_drift_rms_{radius}"] = rms.detach()
+        force = force + force_radius / rms
+
+    goal = (old_scaled + force).detach()
+    loss = ((generated / scale_per_dim - goal) ** 2).mean(dim=(-1, -2))
+    return loss, info
+
+
+def reward_contrastive_kernel_drift_loss(
+    generated: torch.Tensor,
+    reference: torch.Tensor,
+    scores: torch.Tensor,
+    *,
+    reward_alpha: float,
+    radii: Sequence[float],
+    kernel: str = "laplacian",
+    reward_logit_clip: float = 20.0,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """Compute signed AWR drift with soft high-score and low-score anchors.
+
+    This keeps the per-sample AWR property, but makes the force closer to
+    binary DrPO: high-reward generated samples form a soft positive set and
+    low-reward generated samples form a soft negative set.
+    """
+    if reward_alpha <= 0:
+        raise ValueError(f"reward_alpha must be > 0, got {reward_alpha}.")
+    generated = generated.float()
+    reference = reference.float()
+    if generated.ndim != 3 or reference.ndim != 3:
+        raise ValueError("generated and reference must be rank-3 tensors.")
+    if generated.shape != reference.shape:
+        raise ValueError(
+            "reward_contrastive_kernel_drift_loss expects generated and reference to have "
+            f"the same shape, got {tuple(generated.shape)} and {tuple(reference.shape)}."
+        )
+    batch, num_generated, dim = generated.shape
+    scores = scores.to(device=generated.device, dtype=generated.dtype)
+    if scores.ndim == 1:
+        scores = scores.unsqueeze(0)
+    if scores.shape != (batch, num_generated):
+        raise ValueError(f"Expected scores with shape {(batch, num_generated)}, got {tuple(scores.shape)}.")
+
+    old_generated = generated.detach()
+    old_reference = reference.detach()
+    targets = torch.cat([old_generated, old_reference], dim=1)
+    distances = pairwise_l2(old_generated, targets)
+    scale = distances.mean().clamp_min(1e-3)
+    scale_per_dim = (scale / math.sqrt(dim)).clamp_min(1e-3)
+
+    old_scaled = old_generated / scale_per_dim
+    reference_scaled = old_reference / scale_per_dim
+    force = torch.zeros_like(old_scaled)
+    normalized_kernel = normalize_drift_kernel(kernel)
+
+    pos_logits = scores / float(reward_alpha)
+    neg_logits = -scores / float(reward_alpha)
+    pos_logits = pos_logits - pos_logits.max(dim=-1, keepdim=True).values
+    neg_logits = neg_logits - neg_logits.max(dim=-1, keepdim=True).values
+    if reward_logit_clip > 0:
+        clip = float(reward_logit_clip)
+        pos_logits = pos_logits.clamp(min=-clip, max=clip)
+        neg_logits = neg_logits.clamp(min=-clip, max=clip)
+    pos_probs = torch.softmax(pos_logits, dim=-1)
+    neg_probs = torch.softmax(neg_logits, dim=-1)
+    pos_effective_count = (1.0 / pos_probs.square().sum(dim=-1).clamp_min(1e-8)).mean()
+    neg_effective_count = (1.0 / neg_probs.square().sum(dim=-1).clamp_min(1e-8)).mean()
+
+    info = {
+        "feature_scale": scale.detach(),
+        "feature_scale_per_dim": scale_per_dim.detach(),
+        "drift_kernel": generated.new_tensor(float(DRIFT_KERNELS.index(normalized_kernel))),
+        "reward_kernel_alpha": generated.new_tensor(float(reward_alpha)),
+        "reward_kernel_effective_count": pos_effective_count.detach(),
+        "reward_kernel_weight_max": pos_probs.max(dim=-1).values.mean().detach(),
+        "reward_kernel_weight_min": pos_probs.min(dim=-1).values.mean().detach(),
+        "reward_kernel_negative_effective_count": neg_effective_count.detach(),
+        "reward_kernel_negative_weight_max": neg_probs.max(dim=-1).values.mean().detach(),
+    }
+
+    for radius in radii:
+        generated_logits = kernel_logits(
+            old_generated,
+            old_generated,
+            radius=float(radius),
+            kernel=kernel,
+            scale=scale,
+        )
+        reference_logits = kernel_logits(
+            old_generated,
+            old_reference,
+            radius=float(radius),
+            kernel=kernel,
+            scale=scale,
+        )
+        pos_affinity = torch.softmax(generated_logits + pos_logits[:, None, :], dim=-1)
+        neg_affinity = torch.softmax(generated_logits + neg_logits[:, None, :], dim=-1)
+        reference_affinity = torch.softmax(reference_logits, dim=-1)
+
+        pos_mean = torch.einsum("bnm,bmd->bnd", pos_affinity, old_scaled)
+        neg_mean = torch.einsum("bnm,bmd->bnd", neg_affinity, old_scaled)
+        reference_mean = torch.einsum("bnm,bmd->bnd", reference_affinity, reference_scaled)
+        force_radius = pos_mean - old_scaled + reference_mean - neg_mean
+        rms = force_radius.pow(2).mean().clamp_min(1e-8).sqrt()
+        info[f"reward_kernel_contrastive_drift_rms_{radius}"] = rms.detach()
+        force = force + force_radius / rms
+
+    goal = (old_scaled + force).detach()
+    loss = ((generated / scale_per_dim - goal) ** 2).mean(dim=(-1, -2))
+    return loss, info
+
+
+def reward_topk_contrastive_kernel_drift_loss(
+    generated: torch.Tensor,
+    reference: torch.Tensor,
+    scores: torch.Tensor,
+    *,
+    reward_alpha: float,
+    radii: Sequence[float],
+    kernel: str = "laplacian",
+    reward_logit_clip: float = 20.0,
+    top_fraction: float = 0.5,
+    force_scale: float = 1.0,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """Compute a stronger signed AWR drift using soft top/bottom anchors.
+
+    This is still per-sample AWR rather than a hard binary classification loss:
+    anchors inside the top and bottom sets are weighted by their reward scores.
+    The top/bottom split only prevents the full-batch softmax from washing out
+    the update direction when score differences are small.
+    """
+    if reward_alpha <= 0:
+        raise ValueError(f"reward_alpha must be > 0, got {reward_alpha}.")
+    if not (0 < top_fraction <= 1):
+        raise ValueError(f"top_fraction must be in (0, 1], got {top_fraction}.")
+    if force_scale <= 0:
+        raise ValueError(f"force_scale must be > 0, got {force_scale}.")
+    generated = generated.float()
+    reference = reference.float()
+    if generated.ndim != 3 or reference.ndim != 3:
+        raise ValueError("generated and reference must be rank-3 tensors.")
+    if generated.shape != reference.shape:
+        raise ValueError(
+            "reward_topk_contrastive_kernel_drift_loss expects generated and reference to have "
+            f"the same shape, got {tuple(generated.shape)} and {tuple(reference.shape)}."
+        )
+    batch, num_generated, dim = generated.shape
+    scores = scores.to(device=generated.device, dtype=generated.dtype)
+    if scores.ndim == 1:
+        scores = scores.unsqueeze(0)
+    if scores.shape != (batch, num_generated):
+        raise ValueError(f"Expected scores with shape {(batch, num_generated)}, got {tuple(scores.shape)}.")
+
+    old_generated = generated.detach()
+    old_reference = reference.detach()
+    targets = torch.cat([old_generated, old_reference], dim=1)
+    distances = pairwise_l2(old_generated, targets)
+    scale = distances.mean().clamp_min(1e-3)
+    scale_per_dim = (scale / math.sqrt(dim)).clamp_min(1e-3)
+
+    top_count = max(1, min(num_generated, math.ceil(num_generated * float(top_fraction))))
+    bottom_count = top_count
+    top_idx = scores.topk(k=top_count, dim=-1, largest=True).indices
+    bottom_idx = scores.topk(k=bottom_count, dim=-1, largest=False).indices
+    gather_top = top_idx[..., None].expand(-1, -1, dim)
+    gather_bottom = bottom_idx[..., None].expand(-1, -1, dim)
+    top_generated = torch.gather(old_generated, dim=1, index=gather_top)
+    bottom_generated = torch.gather(old_generated, dim=1, index=gather_bottom)
+    top_scores = torch.gather(scores, dim=1, index=top_idx)
+    bottom_scores = torch.gather(scores, dim=1, index=bottom_idx)
+
+    old_scaled = old_generated / scale_per_dim
+    reference_scaled = old_reference / scale_per_dim
+    top_scaled = top_generated / scale_per_dim
+    bottom_scaled = bottom_generated / scale_per_dim
+    force = torch.zeros_like(old_scaled)
+    normalized_kernel = normalize_drift_kernel(kernel)
+
+    pos_logits = top_scores / float(reward_alpha)
+    neg_logits = -bottom_scores / float(reward_alpha)
+    pos_logits = pos_logits - pos_logits.max(dim=-1, keepdim=True).values
+    neg_logits = neg_logits - neg_logits.max(dim=-1, keepdim=True).values
+    if reward_logit_clip > 0:
+        clip = float(reward_logit_clip)
+        pos_logits = pos_logits.clamp(min=-clip, max=clip)
+        neg_logits = neg_logits.clamp(min=-clip, max=clip)
+    pos_probs = torch.softmax(pos_logits, dim=-1)
+    neg_probs = torch.softmax(neg_logits, dim=-1)
+    pos_effective_count = (1.0 / pos_probs.square().sum(dim=-1).clamp_min(1e-8)).mean()
+    neg_effective_count = (1.0 / neg_probs.square().sum(dim=-1).clamp_min(1e-8)).mean()
+
+    info = {
+        "feature_scale": scale.detach(),
+        "feature_scale_per_dim": scale_per_dim.detach(),
+        "drift_kernel": generated.new_tensor(float(DRIFT_KERNELS.index(normalized_kernel))),
+        "reward_kernel_alpha": generated.new_tensor(float(reward_alpha)),
+        "reward_kernel_effective_count": pos_effective_count.detach(),
+        "reward_kernel_weight_max": pos_probs.max(dim=-1).values.mean().detach(),
+        "reward_kernel_weight_min": pos_probs.min(dim=-1).values.mean().detach(),
+        "reward_kernel_negative_effective_count": neg_effective_count.detach(),
+        "reward_kernel_negative_weight_max": neg_probs.max(dim=-1).values.mean().detach(),
+        "reward_kernel_top_count": generated.new_tensor(float(top_count)),
+        "reward_kernel_force_scale": generated.new_tensor(float(force_scale)),
+    }
+
+    for radius in radii:
+        positive_logits = kernel_logits(
+            old_generated,
+            top_generated,
+            radius=float(radius),
+            kernel=kernel,
+            scale=scale,
+        )
+        negative_logits = kernel_logits(
+            old_generated,
+            bottom_generated,
+            radius=float(radius),
+            kernel=kernel,
+            scale=scale,
+        )
+        reference_logits = kernel_logits(
+            old_generated,
+            old_reference,
+            radius=float(radius),
+            kernel=kernel,
+            scale=scale,
+        )
+
+        positive_affinity = torch.softmax(positive_logits + pos_logits[:, None, :], dim=-1)
+        negative_affinity = torch.softmax(negative_logits + neg_logits[:, None, :], dim=-1)
+        reference_affinity = torch.softmax(reference_logits, dim=-1)
+
+        positive_mean = torch.einsum("bnm,bmd->bnd", positive_affinity, top_scaled)
+        negative_mean = torch.einsum("bnm,bmd->bnd", negative_affinity, bottom_scaled)
+        reference_mean = torch.einsum("bnm,bmd->bnd", reference_affinity, reference_scaled)
+        force_radius = positive_mean - old_scaled + reference_mean - negative_mean
+        rms = force_radius.pow(2).mean().clamp_min(1e-8).sqrt()
+        info[f"reward_kernel_topk_drift_rms_{radius}"] = rms.detach()
+        force = force + float(force_scale) * force_radius / rms
+
+    goal = (old_scaled + force).detach()
+    loss = ((generated / scale_per_dim - goal) ** 2).mean(dim=(-1, -2))
+    return loss, info
+
+
+def reward_topk_weighted_binary_drift_loss(
+    generated: torch.Tensor,
+    reference: torch.Tensor,
+    scores: torch.Tensor,
+    *,
+    reward_alpha: float,
+    positive_weight: float,
+    negative_weight: float,
+    radii: Sequence[float],
+    kernel: str = "laplacian",
+    reward_logit_clip: float = 20.0,
+    top_fraction: float = 0.5,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """AWR rescue objective using binary DrPO's strong positive/negative force.
+
+    Top and bottom anchors are still weighted per sample by reward advantages,
+    but the actual feature-space drift uses the same weighted positive/negative
+    kernel construction as binary DrPO. This keeps the AWR signal continuous
+    while avoiding the weak full-batch barycenter force seen in early runs.
+    """
+    if reward_alpha <= 0:
+        raise ValueError(f"reward_alpha must be > 0, got {reward_alpha}.")
+    if not (0 < top_fraction <= 1):
+        raise ValueError(f"top_fraction must be in (0, 1], got {top_fraction}.")
+    generated = generated.float()
+    reference = reference.float()
+    if generated.ndim != 3 or reference.ndim != 3:
+        raise ValueError("generated and reference must be rank-3 tensors.")
+    if generated.shape != reference.shape:
+        raise ValueError(
+            "reward_topk_weighted_binary_drift_loss expects generated and reference to have "
+            f"the same shape, got {tuple(generated.shape)} and {tuple(reference.shape)}."
+        )
+    batch, num_generated, dim = generated.shape
+    scores = scores.to(device=generated.device, dtype=generated.dtype)
+    if scores.ndim == 1:
+        scores = scores.unsqueeze(0)
+    if scores.shape != (batch, num_generated):
+        raise ValueError(f"Expected scores with shape {(batch, num_generated)}, got {tuple(scores.shape)}.")
+
+    top_count = max(1, min(num_generated, math.ceil(num_generated * float(top_fraction))))
+    bottom_count = top_count
+    top_idx = scores.topk(k=top_count, dim=-1, largest=True).indices
+    bottom_idx = scores.topk(k=bottom_count, dim=-1, largest=False).indices
+    gather_top = top_idx[..., None].expand(-1, -1, dim)
+    gather_bottom = bottom_idx[..., None].expand(-1, -1, dim)
+    top_generated = torch.gather(generated.detach(), dim=1, index=gather_top)
+    bottom_generated = torch.gather(generated.detach(), dim=1, index=gather_bottom)
+    top_scores = torch.gather(scores, dim=1, index=top_idx)
+    bottom_scores = torch.gather(scores, dim=1, index=bottom_idx)
+
+    pos_logits = top_scores / float(reward_alpha)
+    neg_logits = -bottom_scores / float(reward_alpha)
+    pos_logits = pos_logits - pos_logits.max(dim=-1, keepdim=True).values
+    neg_logits = neg_logits - neg_logits.max(dim=-1, keepdim=True).values
+    if reward_logit_clip > 0:
+        clip = float(reward_logit_clip)
+        pos_logits = pos_logits.clamp(min=-clip, max=clip)
+        neg_logits = neg_logits.clamp(min=-clip, max=clip)
+    pos_probs = torch.softmax(pos_logits, dim=-1)
+    neg_probs = torch.softmax(neg_logits, dim=-1)
+    # Preserve the scalar DrPO weight scale while distributing it by AWR mass.
+    pos_anchor_weights = float(positive_weight) * float(top_count) * pos_probs
+    neg_anchor_weights = float(negative_weight) * float(bottom_count) * neg_probs
+
+    loss, info = drift_loss(
+        generated,
+        top_generated,
+        bottom_generated,
+        positive_weight=pos_anchor_weights,
+        negative_weight=neg_anchor_weights,
+        radii=radii,
+        kernel=kernel,
+    )
+    info.update(
+        {
+            "reward_kernel_alpha": generated.new_tensor(float(reward_alpha)),
+            "reward_kernel_effective_count": (1.0 / pos_probs.square().sum(dim=-1).clamp_min(1e-8)).mean().detach(),
+            "reward_kernel_weight_max": pos_probs.max(dim=-1).values.mean().detach(),
+            "reward_kernel_weight_min": pos_probs.min(dim=-1).values.mean().detach(),
+            "reward_kernel_negative_effective_count": (1.0 / neg_probs.square().sum(dim=-1).clamp_min(1e-8)).mean().detach(),
+            "reward_kernel_negative_weight_max": neg_probs.max(dim=-1).values.mean().detach(),
+            "reward_kernel_top_count": generated.new_tensor(float(top_count)),
+            "reward_kernel_force_scale": generated.new_tensor(1.0),
+        }
+    )
+    return loss, info
+
+
+def reward_advantage_sign_weighted_binary_drift_loss(
+    generated: torch.Tensor,
+    reference: torch.Tensor,
+    scores: torch.Tensor,
+    *,
+    reward_alpha: float,
+    positive_weight: float,
+    negative_weight: float,
+    radii: Sequence[float],
+    kernel: str = "laplacian",
+    reward_logit_clip: float = 20.0,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """AWR objective that splits anchors by the sign of per-prompt advantage.
+
+    Unlike the hard top/bottom variant, this does not force a fixed positive
+    and negative fraction. Positive anchors are samples with above-mean reward,
+    negative anchors are samples with below-mean reward, and both sides receive
+    AWR softmax weights within their own signed partition.
+    """
+    if reward_alpha <= 0:
+        raise ValueError(f"reward_alpha must be > 0, got {reward_alpha}.")
+    generated = generated.float()
+    reference = reference.float()
+    if generated.ndim != 3 or reference.ndim != 3:
+        raise ValueError("generated and reference must be rank-3 tensors.")
+    if generated.shape != reference.shape:
+        raise ValueError(
+            "reward_advantage_sign_weighted_binary_drift_loss expects generated and reference to have "
+            f"the same shape, got {tuple(generated.shape)} and {tuple(reference.shape)}."
+        )
+    batch, num_generated, _ = generated.shape
+    scores = scores.to(device=generated.device, dtype=generated.dtype)
+    if scores.ndim == 1:
+        scores = scores.unsqueeze(0)
+    if scores.shape != (batch, num_generated):
+        raise ValueError(f"Expected scores with shape {(batch, num_generated)}, got {tuple(scores.shape)}.")
+
+    advantage = scores - scores.mean(dim=-1, keepdim=True)
+    positive_mask = advantage > 0
+    negative_mask = advantage < 0
+    # Degenerate equal-score batches are rare with z-scored rewards, but keep a
+    # deterministic fallback so the objective never produces all-zero anchors.
+    no_positive = ~positive_mask.any(dim=-1)
+    no_negative = ~negative_mask.any(dim=-1)
+    if no_positive.any():
+        positive_mask = positive_mask.clone()
+        positive_mask[no_positive] = False
+        positive_mask[no_positive, scores[no_positive].argmax(dim=-1)] = True
+    if no_negative.any():
+        negative_mask = negative_mask.clone()
+        negative_mask[no_negative] = False
+        negative_mask[no_negative, scores[no_negative].argmin(dim=-1)] = True
+
+    pos_count = positive_mask.sum(dim=-1).to(generated.dtype).clamp_min(1.0)
+    neg_count = negative_mask.sum(dim=-1).to(generated.dtype).clamp_min(1.0)
+    pos_logits = advantage / float(reward_alpha)
+    neg_logits = -advantage / float(reward_alpha)
+    if reward_logit_clip > 0:
+        clip = float(reward_logit_clip)
+        pos_logits = pos_logits.clamp(min=-clip, max=clip)
+        neg_logits = neg_logits.clamp(min=-clip, max=clip)
+    pos_logits = pos_logits.masked_fill(~positive_mask, torch.finfo(pos_logits.dtype).min)
+    neg_logits = neg_logits.masked_fill(~negative_mask, torch.finfo(neg_logits.dtype).min)
+    pos_probs = torch.softmax(pos_logits, dim=-1).masked_fill(~positive_mask, 0.0)
+    neg_probs = torch.softmax(neg_logits, dim=-1).masked_fill(~negative_mask, 0.0)
+
+    pos_anchor_weights = float(positive_weight) * pos_count[:, None] * pos_probs
+    neg_anchor_weights = float(negative_weight) * neg_count[:, None] * neg_probs
+
+    loss, info = drift_loss(
+        generated,
+        generated.detach(),
+        generated.detach(),
+        positive_weight=pos_anchor_weights,
+        negative_weight=neg_anchor_weights,
+        radii=radii,
+        kernel=kernel,
+    )
+    info.update(
+        {
+            "reward_kernel_alpha": generated.new_tensor(float(reward_alpha)),
+            "reward_kernel_effective_count": (1.0 / pos_probs.square().sum(dim=-1).clamp_min(1e-8)).mean().detach(),
+            "reward_kernel_weight_max": pos_probs.max(dim=-1).values.mean().detach(),
+            "reward_kernel_weight_min": pos_probs.masked_fill(~positive_mask, 1.0).min(dim=-1).values.mean().detach(),
+            "reward_kernel_negative_effective_count": (1.0 / neg_probs.square().sum(dim=-1).clamp_min(1e-8)).mean().detach(),
+            "reward_kernel_negative_weight_max": neg_probs.max(dim=-1).values.mean().detach(),
+            "reward_kernel_top_count": pos_count.mean().detach(),
+            "reward_kernel_negative_count": neg_count.mean().detach(),
+            "reward_kernel_force_scale": generated.new_tensor(1.0),
+        }
+    )
     return loss, info
 
 

@@ -1,25 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO
-export PYTHONPATH=/datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/src
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
+export PYTHONPATH="$PROJECT_ROOT"/src
 export TOKENIZERS_PARALLELISM=false
 
 accelerate launch \
-  --num_processes 8 \
+  --num_processes 4 \
   --main_process_port 29671 \
-  /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/src/drpo/methods/sdxl_grpo/trainer.py \
-  --pretrained_model_name_or_path /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/models/stable-diffusion-xl-turbo \
-  --prompt_file /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/data/prompts/pickapicv2_test_unique.txt \
-  --pickscore_model_name_or_path /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/models/PickScore_v1 \
-  --pickscore_processor_name_or_path /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/models/PickScore_v1 \
+  "$PROJECT_ROOT"/src/drpo/methods/sdxl_grpo/trainer.py \
+  --pretrained_model_name_or_path "$PROJECT_ROOT"/models/stable-diffusion-xl-turbo \
+  --prompt_file "$PROJECT_ROOT"/data/prompts/pickapicv2_test_unique.txt \
+  --pickscore_model_name_or_path "$PROJECT_ROOT"/models/PickScore_v1 \
+  --pickscore_processor_name_or_path "$PROJECT_ROOT"/models/PickScore_v1 \
   --choice_model pickscore \
   --choice_score_normalize zscore \
-  --output_dir /datapool/jiangzhou/CODE/Text2ImageProject/StrongDrPO/outputs/sdxl-turbo-lora/grpo/pickscore/lr1e-5_bs24_ga4_steps5000 \
+  --output_dir "$PROJECT_ROOT"/outputs/sdxl-turbo-lora/grpo/pickscore/lr1e-5_bs24_ga8_steps5000 \
   --model_variant fp16 \
   --mixed_precision bf16 \
   --train_batch_size 1 \
-  --gradient_accumulation_steps 4 \
+  --gradient_accumulation_steps 8 \
   --batchsize_gen 24 \
   --max_train_steps 5000 \
   --learning_rate 1e-5 \
@@ -42,5 +44,7 @@ accelerate launch \
   --advantage_scale 1.0 \
   --policy_kl_weight 0.0 \
   --ref_model_l2_weight 0.02 \
-  --vae_decode_chunk_size 1 \
+  --vae_decode_chunk_size 4 \
+  --reward_score_batch_size 128 \
+  --reward_cache_interval 1 \
   --seed 42
