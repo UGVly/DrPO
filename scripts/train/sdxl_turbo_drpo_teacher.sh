@@ -37,7 +37,4 @@ accelerate launch \
   --drifting_ref_weight 3500.0 \
   --drifting_ref_neg_weight 5000.0 \
   --drifting_ref_loss_weight 0.25 \
-  --ref_model_l2_weight 0.03 \
-  --feature_diversity_weight 1.0 \
-  --feature_diversity_margin_scale 0.80 \
   --use_lora

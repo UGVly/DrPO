@@ -114,7 +114,7 @@ class SDXLDrPOConfig:
     drpo_awr_top_fraction: float = 0.5
     drpo_awr_force_scale: float = 1.0
     drpo_awr_loss_weight: float = 1.0
-    ref_model_l2_weight: float = 0.02
+    ref_model_l2_weight: float = 0.0
     feature_diversity_weight: float = 0.0
     feature_diversity_margin_scale: float = 0.8
     vgg_anchor_weight: float = 0.0
@@ -1089,7 +1089,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--drpo_awr_top_fraction", type=float, default=0.5)
     parser.add_argument("--drpo_awr_force_scale", type=float, default=1.0)
     parser.add_argument("--drpo_awr_loss_weight", type=float, default=1.0)
-    parser.add_argument("--ref_model_l2_weight", type=float, default=0.02)
+    parser.add_argument("--ref_model_l2_weight", type=float, default=0.0)
     parser.add_argument("--feature_diversity_weight", type=float, default=0.0)
     parser.add_argument("--feature_diversity_margin_scale", type=float, default=0.8)
     parser.add_argument("--vgg_anchor_weight", type=float, default=0.0)

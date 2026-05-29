@@ -50,6 +50,21 @@ class ScriptCleanlinessTest(unittest.TestCase):
         for needle in expected:
             self.assertIn(needle, text)
 
+    def test_sdxl_drpo_default_wrappers_do_not_enable_extra_regularizers(self):
+        disabled_defaults = [
+            "--ref_model_l2_weight",
+            "--feature_diversity_weight",
+            "--feature_diversity_margin_scale",
+            "--vgg_anchor_weight",
+        ]
+        for relative in (
+            "scripts/train/sdxl_turbo_drpo_mae.sh",
+            "scripts/train/sdxl_turbo_drpo_teacher.sh",
+        ):
+            text = (ROOT / relative).read_text(encoding="utf-8")
+            for needle in disabled_defaults:
+                self.assertNotIn(needle, text, relative)
+
 
 if __name__ == "__main__":
     unittest.main()
