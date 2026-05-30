@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 760" role="img" aria-labelledby="title desc">
+  <title id="title">DrPO overview diagram</title>
+  <desc id="desc">A method diagram showing prompt candidates, reward ranking, feature drifting, and a LoRA update loop.</desc>
+  <defs>
+    <linearGradient id="panel" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eef4f1"/>
+    </linearGradient>
+    <linearGradient id="sampleA" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#d9ece8"/>
+      <stop offset="0.55" stop-color="#81b9b2"/>
+      <stop offset="1" stop-color="#1e6f69"/>
+    </linearGradient>
+    <linearGradient id="sampleB" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#f7ddc4"/>
+      <stop offset="0.55" stop-color="#d58b59"/>
+      <stop offset="1" stop-color="#934533"/>
+    </linearGradient>
+    <linearGradient id="sampleC" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#e8e4f2"/>
+      <stop offset="0.55" stop-color="#a899cf"/>
+      <stop offset="1" stop-color="#5d5587"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#15231f" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M1,1 L11,6 L1,11 Z" fill="#1f2523"/>
+    </marker>
+  </defs>
+
+  <rect width="1400" height="760" rx="28" fill="#fbfbf8"/>
+  <rect x="48" y="44" width="1304" height="672" rx="30" fill="url(#panel)" stroke="#d9e1dd"/>
+
+  <text x="92" y="112" fill="#1f2523" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="800">DrPO training loop</text>
+  <text x="92" y="151" fill="#60706b" font-family="Inter, Arial, sans-serif" font-size="19">sample candidates, rank preferences, and drift feature geometry</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="92" y="208" width="276" height="360" rx="22" fill="#ffffff" stroke="#d9e1dd"/>
+    <text x="124" y="257" fill="#137a72" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800">PROMPT SPLIT</text>
+    <rect x="124" y="286" width="212" height="24" rx="12" fill="#e7f0ed"/>
+    <rect x="124" y="324" width="184" height="24" rx="12" fill="#e7f0ed"/>
+    <rect x="124" y="362" width="226" height="24" rx="12" fill="#e7f0ed"/>
+    <text x="124" y="441" fill="#1f2523" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="800">PickScore</text>
+    <text x="124" y="475" fill="#60706b" font-family="Inter, Arial, sans-serif" font-size="18">train.txt / test.txt</text>
+    <path d="M124 525 C180 492, 230 508, 336 458" fill="none" stroke="#c65b49" stroke-width="7" stroke-linecap="round"/>
+  </g>
+
+  <line x1="390" y1="388" x2="488" y2="388" stroke="#1f2523" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="500" y="202" width="336" height="382" rx="22" fill="#ffffff" stroke="#d9e1dd"/>
+    <text x="534" y="252" fill="#137a72" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800">CANDIDATE SET</text>
+    <g>
+      <rect x="534" y="286" width="126" height="102" rx="16" fill="url(#sampleA)"/>
+      <circle cx="578" cy="332" r="24" fill="#f7efe1" opacity="0.92"/>
+      <path d="M534 370 C570 340, 608 356, 660 315 L660 388 L534 388 Z" fill="#174d49" opacity="0.38"/>
+    </g>
+    <g>
+      <rect x="684" y="286" width="126" height="102" rx="16" fill="url(#sampleB)"/>
+      <circle cx="764" cy="324" r="20" fill="#f8e8d3" opacity="0.9"/>
+      <path d="M684 374 C720 330, 760 364, 810 314 L810 388 L684 388 Z" fill="#5e2f27" opacity="0.34"/>
+    </g>
+    <g>
+      <rect x="534" y="416" width="126" height="102" rx="16" fill="url(#sampleC)"/>
+      <circle cx="588" cy="454" r="18" fill="#f4edf8" opacity="0.9"/>
+      <path d="M534 497 C586 455, 618 484, 660 446 L660 518 L534 518 Z" fill="#3f3a63" opacity="0.34"/>
+    </g>
+    <g>
+      <rect x="684" y="416" width="126" height="102" rx="16" fill="url(#sampleA)"/>
+      <circle cx="728" cy="456" r="22" fill="#f3f6e8" opacity="0.9"/>
+      <path d="M684 499 C716 460, 758 489, 810 438 L810 518 L684 518 Z" fill="#1b5954" opacity="0.34"/>
+    </g>
+  </g>
+
+  <line x1="858" y1="388" x2="956" y2="388" stroke="#1f2523" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="968" y="202" width="292" height="382" rx="22" fill="#ffffff" stroke="#d9e1dd"/>
+    <text x="1002" y="252" fill="#137a72" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800">FEATURE DRIFT</text>
+    <circle cx="1050" cy="340" r="10" fill="#c65b49"/>
+    <circle cx="1088" cy="294" r="10" fill="#c65b49"/>
+    <circle cx="1135" cy="322" r="10" fill="#c65b49"/>
+    <circle cx="1170" cy="276" r="10" fill="#c65b49"/>
+    <circle cx="1044" cy="462" r="10" fill="#137a72"/>
+    <circle cx="1098" cy="502" r="10" fill="#137a72"/>
+    <circle cx="1150" cy="470" r="10" fill="#137a72"/>
+    <circle cx="1192" cy="516" r="10" fill="#137a72"/>
+    <path d="M1051 455 C1086 410, 1119 371, 1168 292" fill="none" stroke="#1f2523" stroke-width="5" stroke-linecap="round" marker-end="url(#arrow)"/>
+    <rect x="1002" y="538" width="224" height="24" rx="12" fill="#e7f0ed"/>
+  </g>
+
+  <path d="M1196 594 C1108 656, 300 650, 220 586" fill="none" stroke="#b8872d" stroke-width="5" stroke-linecap="round" stroke-dasharray="10 13" marker-end="url(#arrow)"/>
+  <text x="548" y="673" fill="#6a5625" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700">LoRA update returns to the generator</text>
+</svg>
