@@ -182,5 +182,3 @@ python scripts/check_local_assets.py --all
 ```
 
 ## Citation
-
-Citation information will be added after the paper is released.
