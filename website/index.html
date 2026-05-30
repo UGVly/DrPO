@@ -41,7 +41,6 @@
         <div class="project-links" aria-label="Project links">
           <a href="assets/drpo-paper.pdf">Paper PDF</a>
           <a href="https://github.com/UGVly/DrPO">Code</a>
-          <a href="#code">Training</a>
         </div>
       </section>
 
@@ -56,7 +55,7 @@
         </article>
         <article>
           <strong>3.51x</strong>
-          <span>HPSv3 per-update speedup over reward-gradient training</span>
+          <span>HPSv3 per-update speedup over reward-gradient updates</span>
         </article>
         <article>
           <strong>Black-box ready</strong>
@@ -104,7 +103,7 @@
           dipole preference field with a reference drift estimated from the frozen
           base generator, and is optimized through a detached feature-space
           regression target. The target reward is used only for ranking, so DrPO
-          can train with large, black-box, or non-differentiable rewards while
+          can optimize with large, black-box, or non-differentiable rewards while
           inference remains a single generator call.
         </p>
       </section>
@@ -133,7 +132,7 @@
           </article>
           <article>
             <span>03</span>
-            <h3>Train toward a detached target</h3>
+            <h3>Fit toward a detached target</h3>
             <p>
               Preference and reference fields define a feature-space target, and
               LoRA parameters are optimized with a regression loss.
@@ -319,12 +318,12 @@
         </div>
         <div class="metric-figures">
           <figure class="paper-figure">
-            <img src="assets/reward-curves.webp" alt="Reward convergence curves for different training methods.">
+            <img src="assets/reward-curves.webp" alt="Reward convergence curves for different optimization methods.">
             <figcaption>Reward convergence curves under matched one-step finetuning.</figcaption>
           </figure>
           <figure class="paper-figure">
             <img src="assets/hpsv3-profile.webp" alt="HPSv3 wall-clock evaluation curve comparing DrPO and DRaFT.">
-            <figcaption>HPSv3 training progresses faster without reward backpropagation.</figcaption>
+            <figcaption>HPSv3 optimization progresses faster without reward backpropagation.</figcaption>
           </figure>
           <figure class="paper-figure">
             <img src="assets/geneval-examples.webp" alt="GenEval-style online DrPO examples for cups, clocks, sheep, and apples.">
@@ -364,12 +363,11 @@
       <section id="code" class="section">
         <div class="section-heading">
           <p>Code</p>
-          <h2>Reproduce the released training recipes.</h2>
+          <h2>Open-source resources.</h2>
         </div>
         <p class="code-intro">
-          The repository contains compact SDXL-Turbo DrPO trainers, SD-Turbo
-          baselines, PickScore prompt splits, sampling utilities, and model
-          asset checks.
+          The repository contains the DrPO implementation, SD-Turbo baselines,
+          PickScore prompt splits, sampling utilities, and model asset checks.
         </p>
         <div class="commands">
           <pre><code>git clone https://github.com/UGVly/DrPO.git
@@ -378,9 +376,7 @@ conda env create -f environment.yml
 conda activate drpo
 pip install -e .</code></pre>
           <pre><code>python scripts/check_local_assets.py
-bash scripts/train/sdxl_turbo_drpo_teacher.sh
-bash scripts/train/sdxl_turbo_drpo_mae.sh
-bash scripts/train/draft.sh</code></pre>
+python scripts/sample.py --help</code></pre>
         </div>
       </section>
     </main>
