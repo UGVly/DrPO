@@ -87,6 +87,6 @@ bash scripts/train/sdxl_turbo_draft.sh
 ## Repository Hygiene
 
 For release preparation, keep only reusable code under `src/`, maintained launch
-recipes under `scripts/`, and tests/docs that describe those paths. Put local
+recipes under `scripts/`, and focused tests that cover those paths. Put local
 sweeps, paper-rendering artifacts, copied PDFs, generated figures, and machine
 specific launch helpers outside the tracked tree.
