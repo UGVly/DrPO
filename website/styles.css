@@ -385,6 +385,60 @@ tbody tr:last-child td {
   margin-top: 24px;
 }
 
+.qual-comparison {
+  display: grid;
+  gap: 22px;
+  margin-top: 24px;
+}
+
+.qual-set {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.qual-set h3 {
+  margin-bottom: 14px;
+  color: #2d3439;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(19px, 2.2vw, 28px);
+  text-align: center;
+}
+
+.qual-gallery {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(132px, 1fr));
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.qual-gallery figure {
+  margin: 0;
+}
+
+.qual-gallery img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  object-fit: cover;
+}
+
+.qual-gallery .ours img {
+  border: 4px solid var(--green);
+}
+
+.qual-gallery figcaption {
+  margin-top: 7px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 760;
+}
+
 .commands {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 24px;
