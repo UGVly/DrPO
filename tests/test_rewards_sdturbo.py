@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 import unittest
-import importlib.util
 from types import SimpleNamespace
 from pathlib import Path
 
@@ -32,14 +31,6 @@ class RewardAndSDTurboTest(unittest.TestCase):
     def test_unknown_reward_selector_fails_clearly(self):
         with self.assertRaisesRegex(ValueError, "Unknown reward selector"):
             build_selector("missing", "cpu")
-
-    def test_optional_reward_selectors_are_registered(self):
-        optional_modules = {"hpsv3": "hpsv3", "imagereward": "ImageReward"}
-        for name, module in optional_modules.items():
-            if importlib.util.find_spec(module) is not None:
-                continue
-            with self.assertRaises(ImportError):
-                build_selector(name, "cpu")
 
     def test_one_step_clean_latent_formula(self):
         noisy = torch.ones(1, 1, 1, 1)

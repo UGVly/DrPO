@@ -13,6 +13,7 @@ __pycache__/
 /outputs/
 /logs/
 /analysis/
+/qualitative/
 /wandb/
 /runs/
 
@@ -34,6 +35,7 @@ conda_venvs/*
 *.pid
 /samples/
 scripts_backup_before_cleanup_*.tar.gz
+scripts/manual_launches/
 
 # Local-only research artifacts and one-off experiments.
 /archive/

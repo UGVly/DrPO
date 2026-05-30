@@ -105,12 +105,11 @@ class MetricsCoreIntegrationTest(unittest.TestCase):
         summary = build_summary(
             [
                 {"model_type": "x", "checkpoint_path": "ckpt", "pickscore": 1.0, "clip": 0.2, "aes": 5.0, "hpsv2": 0.1},
-                {"model_type": "x", "checkpoint_path": "ckpt", "pickscore": 3.0, "clip": 0.4, "aes": 7.0, "hpsv2": 0.3, "imagereward": 2.0},
+                {"model_type": "x", "checkpoint_path": "ckpt", "pickscore": 3.0, "clip": 0.4, "aes": 7.0, "hpsv2": 0.3},
             ]
         )
         self.assertEqual(summary["num_images"], 2)
         self.assertAlmostEqual(summary["pickscore_mean"], 2.0)
-        self.assertAlmostEqual(summary["imagereward_mean"], 2.0)
         self.assertEqual(scalar_summary([1.0])["std"], 0.0)
 
     def test_write_summary_csv_collects_nested_summaries(self):

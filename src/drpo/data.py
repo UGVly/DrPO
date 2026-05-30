@@ -61,7 +61,6 @@ class Batch:
     input_ids: torch.Tensor
     chosen: list[torch.Tensor] | None = None
     rejected: list[torch.Tensor] | None = None
-    geneval_metadata: list[dict[str, Any] | None] | None = None
 
 
 class PreferenceDataset(Dataset):
@@ -136,11 +135,10 @@ class PromptDataset(Dataset):
         self.path = Path(prompt_file)
         self.tokenizer = tokenizer
         self.rows = self._load_rows(max_samples, seed=seed)
-        self.has_geneval_metadata = any(row.get("geneval_metadata") is not None for row in self.rows)
 
     def _load_rows(self, max_samples: int | None, *, seed: int | None) -> list[dict[str, Any]]:
         if self.path.suffix.lower() != ".jsonl":
-            rows = [{"prompt": prompt, "geneval_metadata": None} for prompt in load_prompt_file(self.path, max_samples)]
+            rows = [{"prompt": prompt} for prompt in load_prompt_file(self.path, max_samples)]
             if seed is not None:
                 random.Random(seed).shuffle(rows)
             return rows
@@ -152,12 +150,7 @@ class PromptDataset(Dataset):
             prompt = str(row.get("prompt", "")).strip()
             if not prompt:
                 continue
-            geneval_metadata = row.get("geneval_metadata")
-            if geneval_metadata is None and "tag" in row and "prompt" in row:
-                geneval_metadata = dict(row)
-            if geneval_metadata is not None and not isinstance(geneval_metadata, dict):
-                raise TypeError(f"geneval_metadata must be an object when present, got {type(geneval_metadata)}")
-            normalized_rows.append({"prompt": prompt, "geneval_metadata": geneval_metadata})
+            normalized_rows.append({"prompt": prompt})
         if not normalized_rows:
             raise ValueError(f"No prompts found in {self.path}.")
         if seed is not None:
@@ -177,20 +170,15 @@ class PromptDataset(Dataset):
             truncation=True,
             return_tensors="pt",
         ).input_ids[0]
-        item: dict[str, object] = {"prompt": prompt, "input_ids": input_ids}
-        if row["geneval_metadata"] is not None:
-            item["geneval_metadata"] = row["geneval_metadata"]
-        return item
+        return {"prompt": prompt, "input_ids": input_ids}
 
 
 def collate_preference_batch(items: list[dict[str, object]]) -> Batch:
     chosen = [item["chosen"].float() for item in items] if "chosen" in items[0] else None
     rejected = [item["rejected"].float() for item in items] if "rejected" in items[0] else None
-    geneval_metadata = [item.get("geneval_metadata") for item in items] if any("geneval_metadata" in item for item in items) else None
     return Batch(
         prompts=[str(item["prompt"]) for item in items],
         input_ids=torch.stack([item["input_ids"] for item in items]),
         chosen=chosen,
         rejected=rejected,
-        geneval_metadata=geneval_metadata,
     )

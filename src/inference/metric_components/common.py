@@ -141,15 +141,12 @@ def build_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "model_type": rows[0].get("model_type") if rows else None,
         "checkpoint_path": rows[0].get("checkpoint_path") if rows else None,
     }
-    for key in (*CORE_REWARD_NAMES, "imagereward"):
+    for key in CORE_REWARD_NAMES:
         values = [float(row[key]) for row in rows if key in row and row[key] is not None]
         if values:
             stat = scalar_summary(values)
             summary[f"{key}_mean"] = stat["mean"]
             summary[f"{key}_std"] = stat["std"]
-            if key == "imagereward":
-                summary["imagereward_x10_mean"] = stat["mean"] * 10.0
-                summary["imagereward_x10_std"] = stat["std"] * 10.0
     return summary
 
 

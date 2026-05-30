@@ -5,12 +5,12 @@ Drifting Preference Optimization keeps the open-source surface deliberately shal
 ```text
 src/drpo/
   data.py, rewards.py, drift.py, features.py
-  methods/               # baseline shims plus maintained SDXL trainers
+  methods/               # maintained SDXL trainers
   methods/sdxl_common.py # shared SDXL training infrastructure
   utils/                 # tensor and selection helpers
 
 src/inference/           # sampling and metric code
-baselines/               # compact comparison implementations
+baselines/               # compact SD-Turbo comparison implementations
 scripts/train/           # maintained launch recipes
 scripts/inference/       # sampling/evaluation recipes
 tests/                   # behavior and layout checks

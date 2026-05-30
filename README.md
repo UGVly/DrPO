@@ -42,7 +42,7 @@ Training expects local assets under the project root:
 
 ```text
 models/sd-turbo/
-models/sdxl-turbo/
+models/stable-diffusion-xl-turbo/
 models/PickScore_v1/
 models/CLIP-ViT-L-14/
 models/CLIP-ViT-H-14-laion2B-s32B-b79K/open_clip_pytorch_model.bin

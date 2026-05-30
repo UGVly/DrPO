@@ -138,7 +138,7 @@ class SDXLDrPOConfigTest(unittest.TestCase):
             return generated.new_ones(generated.shape[0]), {}
 
         config = sdxl_trainer.SDXLDrPOConfig(
-            pretrained_model_name_or_path="models/sdxl-turbo",
+            pretrained_model_name_or_path="models/stable-diffusion-xl-turbo",
             output_dir="outputs/test",
             prompt_file="data/prompts.txt",
             mae_model_name_or_path="models/mae",

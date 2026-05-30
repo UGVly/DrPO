@@ -76,28 +76,19 @@ class DataPathAssetTest(unittest.TestCase):
             self.assertEqual(tuple(batch.chosen[0].shape), (1, 3, 16, 16))
             self.assertEqual(tuple(batch.rejected[0].shape), (1, 3, 16, 16))
 
-    def test_prompt_dataset_loads_geneval_jsonl_metadata(self):
+    def test_prompt_dataset_loads_jsonl_prompts(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            prompt_file = root / "geneval_prompts.jsonl"
+            prompt_file = root / "prompts.jsonl"
             prompt_file.write_text(
-                json.dumps(
-                    {
-                        "tag": "single_object",
-                        "include": [{"class": "cat", "count": 1}],
-                        "prompt": "a photo of a cat",
-                    }
-                )
-                + "\n",
+                json.dumps({"prompt": "a photo of a cat"}) + "\n",
                 encoding="utf-8",
             )
             dataset = PromptDataset(prompt_file, FakeTokenizer())
-            self.assertTrue(dataset.has_geneval_metadata)
             item = dataset[0]
             self.assertEqual(item["prompt"], "a photo of a cat")
-            self.assertEqual(item["geneval_metadata"]["tag"], "single_object")
             batch = collate_preference_batch([item])
-            self.assertEqual(batch.geneval_metadata[0]["prompt"], "a photo of a cat")
+            self.assertEqual(batch.prompts, ["a photo of a cat"])
 
     def test_local_path_validation_and_asset_status(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -31,7 +31,6 @@ from inference.metric_components.common import (
     write_jsonl,
     write_summary_csv,
 )
-from inference.metric_components.imagereward import evaluate_imagereward
 from inference.metric_components.reward_models import build_clip_aes_models, score_clip_aes, score_with_selector
 
 CORE_COMPONENTS = ("pickscore", "clip_aes", "hpsv2", "summarize")
@@ -42,7 +41,6 @@ __all__ = [
     "build_summary",
     "discover_manifests",
     "evaluate_core",
-    "evaluate_imagereward",
     "feature_cache_path",
     "image_batch_to_tensor",
     "image_tensor_loader",
@@ -198,7 +196,7 @@ def evaluate_core(args) -> None:
 def build_parser() -> argparse.ArgumentParser:
     root = project_root()
     parser = argparse.ArgumentParser(description="Evaluate generated samples.")
-    parser.add_argument("--metric-set", choices=["core", "imagereward"], default="core")
+    parser.add_argument("--metric-set", choices=["core"], default="core")
     parser.add_argument("--samples-dir", default=str(root / "samples"))
     parser.add_argument("--metrics-dir", default=str(root / "samples" / "metrics"))
     parser.add_argument("--manifest", default=None)
@@ -221,10 +219,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.metric_set == "core":
-        evaluate_core(args)
-    else:
-        evaluate_imagereward(args)
+    evaluate_core(args)
     return 0
 
 

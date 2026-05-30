@@ -10,7 +10,7 @@ export TOKENIZERS_PARALLELISM=false
 accelerate launch \
   --num_processes 4 \
   --main_process_port 29671 \
-  "$PROJECT_ROOT"/src/drpo/methods/vggflow/trainer.py \
+  "$PROJECT_ROOT"/baselines/vggflow/train_lora.py \
   --pretrained_model_name_or_path "$PROJECT_ROOT"/models/sd-turbo \
   --pickscore_model_name_or_path "$PROJECT_ROOT"/models/PickScore_v1 \
   --pickscore_processor_name_or_path "$PROJECT_ROOT"/models/PickScore_v1 \

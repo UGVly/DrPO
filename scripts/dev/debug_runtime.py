@@ -71,13 +71,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Debug DrPO runtime wiring without starting a full experiment.")
     parser.add_argument("--device", default="auto", help="auto, cuda, cuda:0, or cpu")
     parser.add_argument("--skip-assets", action="store_true")
-    parser.add_argument("--eval-assets", action="store_true", help="also check HPSv3 and ImageReward assets")
     parser.add_argument("--skip-imports", action="store_true")
     parser.add_argument("--sdturbo", action="store_true", help="load SD-Turbo components from local models/sd-turbo")
     parser.add_argument(
         "--reward",
         action="append",
-        choices=["pickscore", "clip", "aes", "hps", "hpsv2", "hpsv3", "imagereward", "all", "all-eval"],
+        choices=["pickscore", "clip", "aes", "hps", "hpsv2", "all"],
         default=[],
         help="smoke-test one reward selector; repeat for multiple selectors",
     )
@@ -90,23 +89,11 @@ def main(argv: list[str] | None = None) -> int:
         check_imports()
     if not args.skip_assets:
         check_local_assets()
-        if args.eval_assets:
-            missing = []
-            for asset, exists in check_assets(include_eval=True)[len(check_assets()) :]:
-                state = "OK" if exists else "MISSING"
-                print(f"{state:7s} asset             {asset.name:18s} {asset.path}")
-                if not exists:
-                    missing.append(asset)
-            if missing:
-                names = ", ".join(asset.name for asset in missing)
-                raise FileNotFoundError(f"Missing local eval assets: {names}")
     if args.sdturbo:
         smoke_sdturbo()
     reward_names = args.reward
     if "all" in reward_names:
         reward_names = ["pickscore", "clip", "aes", "hps"]
-    if "all-eval" in reward_names:
-        reward_names = ["hpsv3", "imagereward"]
     if reward_names:
         smoke_rewards(reward_names, _device(args.device))
     return 0

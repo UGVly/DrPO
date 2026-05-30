@@ -32,10 +32,9 @@ dev = [
 ]
 
 [project.scripts]
-drpo-train = "drpo.training.sdturbo_lora:main"
-drpo-full-train = "drpo.training.sdturbo_full:main"
 sdxl-drpo-train = "drpo.methods.sdxl_drpo.trainer:main"
 sdxl-draft-train = "drpo.methods.sdxl_draft.trainer:main"
+sdxl-grpo-train = "drpo.methods.sdxl_grpo.trainer:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

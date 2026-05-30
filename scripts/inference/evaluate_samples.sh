@@ -26,7 +26,3 @@ if [[ "${FORCE:-0}" == "1" ]]; then
 fi
 
 python -m inference.metrics "${ARGS[@]}"
-
-if [[ "${RUN_IMAGEREWARD:-0}" == "1" ]]; then
-  python -m inference.metrics "${ARGS[@]/core/imagereward}"
-fi

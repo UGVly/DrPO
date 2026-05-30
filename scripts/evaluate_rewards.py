@@ -105,7 +105,7 @@ def evaluate_single(args) -> list[dict[str, Any]]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Score generated images with local reward models.")
-    parser.add_argument("--selector", required=True, choices=["pickscore", "clip", "aes", "hps", "hpsv2", "hpsv3", "imagereward"])
+    parser.add_argument("--selector", required=True, choices=["pickscore", "clip", "aes", "hps", "hpsv2"])
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--input-jsonl", default=None)
     parser.add_argument("--output-jsonl", default=None)
