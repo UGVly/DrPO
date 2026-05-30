@@ -19,6 +19,9 @@ __pycache__/
 
 /data/*
 !/data/pairs.jsonl
+!/data/pickscore/
+/data/pickscore/*
+!/data/pickscore/*.txt
 !/data/prompts/
 /data/prompts/*
 !/data/prompts/simple_animals.txt
