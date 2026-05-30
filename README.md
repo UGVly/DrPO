@@ -183,18 +183,4 @@ python scripts/check_local_assets.py --all
 
 ## Citation
 
-If this code is useful for your research, please cite the DrPO paper.
-
-```bibtex
-@article{drpo2026,
-  title   = {Drifting Preference Optimization},
-  author  = {DrPO Authors},
-  journal = {arXiv preprint},
-  year    = {2026}
-}
-```
-
-## License
-
-This repository is released for research use. Please check the licenses of the
-underlying model checkpoints before using them.
+Citation information will be added after the paper is released.
