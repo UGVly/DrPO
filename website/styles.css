@@ -318,6 +318,15 @@ table {
   font-size: 14px;
 }
 
+caption {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 650;
+  text-align: left;
+}
+
 th,
 td {
   padding: 11px 12px;

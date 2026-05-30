@@ -159,6 +159,9 @@
         </div>
         <div class="table-wrap" role="region" aria-label="Main comparison table" tabindex="0">
           <table>
+            <caption>
+              Results on SDXL-Turbo. PS denotes PickScore x 100 and IR denotes ImageReward x 10.
+            </caption>
             <thead>
               <tr>
                 <th rowspan="2">Method</th>
@@ -178,92 +181,103 @@
             </thead>
             <tbody>
               <tr>
-                <td>SD-Turbo base</td>
+                <td>SDXL base</td>
+                <td>50</td>
+                <td>-</td>
+                <td>22.15</td>
+                <td>6.104</td>
+                <td>6.85</td>
+                <td>22.64</td>
+                <td>5.761</td>
+                <td>7.24</td>
+              </tr>
+              <tr>
+                <td>SDXL-DPO</td>
+                <td>50</td>
+                <td>-</td>
+                <td>22.57</td>
+                <td>6.076</td>
+                <td>9.38</td>
+                <td>22.95</td>
+                <td>5.811</td>
+                <td>10.66</td>
+              </tr>
+              <tr>
+                <td>SDXL-Turbo base</td>
                 <td>1</td>
                 <td>-</td>
-                <td>21.88</td>
-                <td>6.054</td>
-                <td>5.75</td>
-                <td>22.29</td>
-                <td>5.758</td>
-                <td>5.37</td>
+                <td>22.45</td>
+                <td>6.059</td>
+                <td>9.36</td>
+                <td>22.77</td>
+                <td>5.693</td>
+                <td>9.13</td>
               </tr>
               <tr>
                 <td>DRaFT</td>
                 <td>1</td>
                 <td>Yes</td>
-                <td>24.69</td>
-                <td>6.820</td>
-                <td>9.63</td>
-                <td>23.07</td>
-                <td>6.516</td>
-                <td>7.72</td>
+                <td>24.45</td>
+                <td>6.712</td>
+                <td>12.70</td>
+                <td>24.34</td>
+                <td>6.485</td>
+                <td>12.66</td>
               </tr>
               <tr>
                 <td>VGGFlow</td>
                 <td>1</td>
                 <td>Yes</td>
-                <td>23.73</td>
-                <td>6.378</td>
-                <td>7.74</td>
-                <td>22.99</td>
-                <td>6.027</td>
-                <td>6.50</td>
+                <td>24.27</td>
+                <td>6.490</td>
+                <td>12.19</td>
+                <td>23.98</td>
+                <td>6.200</td>
+                <td>11.40</td>
               </tr>
               <tr>
                 <td>DPO<sub>1step</sub></td>
                 <td>1</td>
                 <td>No</td>
-                <td>22.02</td>
-                <td>6.080</td>
-                <td>5.95</td>
-                <td>22.39</td>
-                <td>5.793</td>
-                <td>5.21</td>
+                <td>22.77</td>
+                <td>6.227</td>
+                <td>10.44</td>
+                <td>22.85</td>
+                <td>6.019</td>
+                <td>11.25</td>
               </tr>
               <tr>
                 <td>PSO</td>
                 <td>1</td>
                 <td>No</td>
-                <td>21.88</td>
-                <td>6.059</td>
-                <td>5.80</td>
-                <td>22.29</td>
-                <td>5.763</td>
-                <td>5.42</td>
+                <td>22.56</td>
+                <td>6.092</td>
+                <td>8.97</td>
+                <td>22.87</td>
+                <td>5.744</td>
+                <td>9.17</td>
               </tr>
               <tr>
                 <td>GRPO<sub>1step</sub></td>
                 <td>1</td>
                 <td>No</td>
-                <td>21.98</td>
+                <td>22.50</td>
                 <td>6.077</td>
-                <td>6.08</td>
-                <td>22.35</td>
-                <td>5.779</td>
-                <td>5.65</td>
-              </tr>
-              <tr class="highlight-muted">
-                <td>DrPO w/o ref.</td>
-                <td>1</td>
-                <td>No</td>
-                <td>23.55</td>
-                <td>6.603</td>
-                <td>10.07</td>
-                <td>23.02</td>
-                <td>6.384</td>
-                <td>7.89</td>
+                <td>9.57</td>
+                <td>22.80</td>
+                <td>5.710</td>
+                <td>9.27</td>
               </tr>
               <tr class="highlight">
                 <td>DrPO</td>
                 <td>1</td>
                 <td>No</td>
-                <td>23.50</td>
-                <td>6.486</td>
-                <td>9.54</td>
-                <td>22.99</td>
-                <td>6.284</td>
-                <td>7.46</td>
+                <td>23.66</td>
+                <td>6.717</td>
+                <td>12.46</td>
+                <td>23.71</td>
+                <td>6.665</td>
+                <td>12.60</td>
               </tr>
             </tbody>
           </table>
@@ -271,11 +285,17 @@
 
         <div class="result-cards">
           <article>
-            <h3>SDXL-Turbo transfer</h3>
+            <h3>SDXL-Turbo main result</h3>
             <p>
-              DrPO improves SDXL-Turbo from 22.42 to 22.97 PickScore, 9.07 to
-              10.66 ImageReward, and 36.34 to 36.66 HPSv2 while keeping a
-              one-step, zero-guidance sampler.
+              DrPO improves SDXL-Turbo from 22.45 to 23.66 PickScore, 6.059 to
+              6.717 AES, and 9.36 to 12.46 ImageReward on Pick-a-Pic v2.
+            </p>
+          </article>
+          <article>
+            <h3>SD-Turbo generalization</h3>
+            <p>
+              The same arxiv table set reports SD-Turbo gains from 21.88 to
+              23.49 PickScore and from 5.75 to 9.54 ImageReward on Pick-a-Pic v2.
             </p>
           </article>
           <article>
@@ -283,13 +303,6 @@
             <p>
               With HPSv3, DrPO removes reward-model backpropagation and reduces
               matched-batch update time from 21.62s to 6.17s.
-            </p>
-          </article>
-          <article>
-            <h3>Discrete rewards</h3>
-            <p>
-              GenEval-style correctness checks can be used directly because DrPO
-              only needs candidate rankings or binary correctness signals.
             </p>
           </article>
         </div>
@@ -326,10 +339,17 @@
           <h2>Matched-prompt comparisons and reward-model ablations.</h2>
         </div>
         <figure class="paper-figure full">
-          <img src="assets/qualitative-grid.webp" alt="Qualitative comparison across SD-Turbo, DPO, DRaFT, VGGFlow, PSO, GRPO, and DrPO.">
+          <img src="assets/sdxl-main.webp" alt="Qualitative comparison across SDXL-Turbo, DPO, GRPO, DRaFT, VGGFlow, and DrPO.">
           <figcaption>
-            Headline comparison on selected Pick-a-Pic v2 prompts. DrPO improves
-            preference-aligned visual quality while preserving one-step inference.
+            Qualitative comparison on Pick-a-Pic v2 prompts for SDXL-Turbo,
+            matching the main quantitative table in arxiv.tex.
+          </figcaption>
+        </figure>
+        <figure class="paper-figure full">
+          <img src="assets/sd-main.webp" alt="Qualitative comparison across SD-Turbo, DPO, DRaFT, VGGFlow, PSO, GRPO, and DrPO.">
+          <figcaption>
+            Qualitative headline comparison on selected Pick-a-Pic v2 prompts
+            for SD-Turbo.
           </figcaption>
         </figure>
         <figure class="paper-figure full">
