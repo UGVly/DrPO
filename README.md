@@ -44,7 +44,7 @@ large checkpoints during training.
 Create the expected local model directories:
 
 ```bash
-python -m pip install -U "huggingface_hub[cli]"
+python -m pip install -U "huggingface_hub[cli]" modelscope
 mkdir -p models
 
 huggingface-cli download stabilityai/sd-turbo \
@@ -58,6 +58,11 @@ huggingface-cli download facebook/vit-mae-base \
 
 huggingface-cli download yuvalkirstain/PickScore_v1 \
   --local-dir models/PickScore_v1
+
+modelscope download \
+  --model jiangzhou130v1/drpo-mae-latent-256 \
+  mae_latent_256_torch.pth \
+  --local_dir models
 ```
 
 If a Hugging Face model requires authentication, run `huggingface-cli login`
@@ -76,6 +81,7 @@ models/sd-turbo/
 models/stable-diffusion-xl-turbo/
 models/facebook-vit-mae-base/
 models/PickScore_v1/
+models/mae_latent_256_torch.pth
 data/pickscore/train.txt
 data/pickscore/test.txt
 ```
@@ -167,24 +173,12 @@ models/CLIP-ViT-L-14/
 models/CLIP-ViT-H-14-laion2B-s32B-b79K/open_clip_pytorch_model.bin
 models/HPSv2/HPS_v2_compressed.pt
 models/Aesthetic/sac+logos+ava1-l14-linearMSE.pth
-models/mae_latent_256_torch.pth
 ```
 
 Check optional assets with:
 
 ```bash
 python scripts/check_local_assets.py --all
-```
-
-The latent MAE checkpoint used by older SD-Turbo feature-space baselines is
-available on ModelScope:
-
-```bash
-python -m pip install -U modelscope
-modelscope download \
-  --model jiangzhou130v1/drpo-mae-latent-256 \
-  mae_latent_256_torch.pth \
-  --local_dir models
 ```
 
 ## Citation

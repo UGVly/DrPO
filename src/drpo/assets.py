@@ -21,6 +21,7 @@ def required_assets(root: Path | None = None, *, include_optional: bool = False)
         AssetSpec("sdxl_turbo", root / "models" / "stable-diffusion-xl-turbo", "dir"),
         AssetSpec("mae_vit_base", root / "models" / "facebook-vit-mae-base", "dir"),
         AssetSpec("pickscore", root / "models" / "PickScore_v1", "dir"),
+        AssetSpec("mae_latent_256", root / "models" / "mae_latent_256_torch.pth", "file"),
         AssetSpec("train_prompts", root / "data" / "pickscore" / "train.txt", "file"),
         AssetSpec("test_prompts", root / "data" / "pickscore" / "test.txt", "file"),
         AssetSpec("clip_l14", root / "models" / "CLIP-ViT-L-14", "dir", optional=True),
@@ -37,7 +38,6 @@ def required_assets(root: Path | None = None, *, include_optional: bool = False)
             "file",
             optional=True,
         ),
-        AssetSpec("mae_latent_256", root / "models" / "mae_latent_256_torch.pth", "file", optional=True),
     ]
     if include_optional:
         return assets

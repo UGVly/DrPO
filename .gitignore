@@ -22,7 +22,6 @@ __pycache__/
 /data/pickscore/*
 !/data/pickscore/*.txt
 /models/
-/drifting/
 /third_party/
 /tmp/
 

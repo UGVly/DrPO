@@ -522,7 +522,7 @@ def parse_args():
     parser.add_argument("--feature_block_stride", type=int, default=2)
     parser.add_argument("--feature_patch_sizes", type=str, default="2,4")
     parser.add_argument("--feature_aggregation", type=str, default="mean", choices=["mean", "sum"])
-    parser.add_argument("--mae_path", type=str, default=os.path.join(PROJECT_ROOT, "drifting", "mae_latent_256_torch.pth"))
+    parser.add_argument("--mae_path", type=str, default=os.path.join(PROJECT_ROOT, "models", "mae_latent_256_torch.pth"))
     parser.add_argument("--mae_include_input_sq_mean", action="store_true")
     parser.add_argument("--mae_include_spatial_features", action="store_true")
 
