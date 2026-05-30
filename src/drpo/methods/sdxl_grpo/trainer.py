@@ -856,7 +856,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train SDXL Turbo with fused neighbor-based GRPO.")
     parser.add_argument("--pretrained_model_name_or_path", default=str(root / "models" / "stable-diffusion-xl-turbo"))
     parser.add_argument("--output_dir", default=str(root / "outputs" / "sdxl-turbo-lora" / "grpo" / "pickscore" / "lr1e-5_bs24_ga4_steps5000"))
-    parser.add_argument("--prompt_file", default=str(root / "data" / "prompts" / "pickapicv2_test_unique.txt"))
+    parser.add_argument("--prompt_file", default=str(root / "data" / "pickscore" / "train.txt"))
     parser.add_argument("--model_variant", default="fp16")
     parser.add_argument("--choice_model", default="pickscore")
     parser.add_argument("--choice_models", default="")

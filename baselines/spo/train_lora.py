@@ -202,7 +202,14 @@ def parse_args():
     parser.add_argument("--mixed_precision", type=str, default="fp16", choices=["no", "fp16", "bf16"])
     parser.add_argument("--report_to", type=str, default="tensorboard")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--pairs_jsonl", type=str, default=os.path.join(PROJECT_ROOT, "data", "pairs.jsonl"))
+    parser.add_argument(
+        "--pairs_jsonl",
+        "--train_prompt_file",
+        dest="pairs_jsonl",
+        type=str,
+        default=os.path.join(PROJECT_ROOT, "data", "pickscore", "train.txt"),
+        help="Prompt txt for online mode, or preference-pair JSONL for offline modes.",
+    )
     parser.add_argument("--train_batch_size", type=int, default=1)
     parser.add_argument("--batchsize_gen", type=int, default=8, help="Even number of generated samples per prompt; adjacent samples form SPO pairs.")
     parser.add_argument("--generation_timestep", type=int, default=999)
@@ -248,7 +255,7 @@ def parse_args():
     parser.add_argument("--max_log_ratio", type=float, default=10.0)
     parser.add_argument("--ref_model_l2_weight", type=float, default=0.0)
 
-    parser.add_argument("--eval_prompt_file", type=str, default=os.path.join(PROJECT_ROOT, "data", "prompts", "pickapicv2_test_unique.txt"))
+    parser.add_argument("--eval_prompt_file", type=str, default=os.path.join(PROJECT_ROOT, "data", "pickscore", "test.txt"))
     parser.add_argument("--num_eval_prompts", type=int, default=10)
     parser.add_argument("--eval_every_steps", type=int, default=0)
     parser.add_argument("--eval_seed", type=int, default=1234)

@@ -47,8 +47,8 @@ models/sd-turbo/
 models/stable-diffusion-xl-turbo/
 models/facebook-vit-mae-base/
 models/PickScore_v1/
-data/prompts/pickapicv2_test_unique.txt
-data/pairs.jsonl
+data/pickscore/train.txt
+data/pickscore/test.txt
 ```
 
 Download them with:

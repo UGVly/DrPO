@@ -27,28 +27,27 @@ class FakeTokenizer:
         return type("Tokenized", (), {"input_ids": torch.tensor(rows, dtype=torch.long)})
 
 
-class OnlineAnimalPromptTest(unittest.TestCase):
+class OnlinePickScorePromptTest(unittest.TestCase):
     def setUp(self):
-        self.prompt_file = ROOT / "data" / "prompts" / "simple_animals.txt"
+        self.prompt_file = ROOT / "data" / "pickscore" / "train.txt"
 
-    def test_simple_animals_prompt_file_exists(self):
-        self.assertTrue(self.prompt_file.is_file(), f"missing animal prompt file: {self.prompt_file}")
+    def test_pickscore_train_prompt_file_exists(self):
+        self.assertTrue(self.prompt_file.is_file(), f"missing prompt file: {self.prompt_file}")
 
-    def test_simple_animals_prompt_file_has_expected_size(self):
+    def test_pickscore_train_prompt_file_has_expected_size(self):
         prompts = load_prompt_file(self.prompt_file)
-        self.assertEqual(len(prompts), 45)
-        self.assertEqual(len(set(prompts)), 45)
+        self.assertEqual(len(prompts), 25432)
         self.assertTrue(all(prompt and prompt == prompt.strip() for prompt in prompts))
 
     def test_prompt_loader_limit_keeps_original_order(self):
         prompts = load_prompt_file(self.prompt_file, limit=3)
-        self.assertEqual(prompts, ["cat", "dog", "horse"])
+        self.assertEqual(prompts, load_prompt_file(self.prompt_file)[:3])
 
-    def test_prompt_dataset_tokenizes_animal_prompts(self):
+    def test_prompt_dataset_tokenizes_pickscore_prompts(self):
         dataset = PromptDataset(self.prompt_file, FakeTokenizer(), max_samples=5)
         self.assertEqual(len(dataset), 5)
         item = dataset[0]
-        self.assertEqual(item["prompt"], "cat")
+        self.assertEqual(item["prompt"], load_prompt_file(self.prompt_file, limit=1)[0])
         self.assertEqual(tuple(item["input_ids"].shape), (8,))
 
     def test_prompt_dataset_seed_shuffles_deterministically(self):
@@ -64,7 +63,7 @@ class OnlineAnimalPromptTest(unittest.TestCase):
     def test_prompt_dataset_collates_as_online_batch(self):
         dataset = PromptDataset(self.prompt_file, FakeTokenizer(), max_samples=2)
         batch = collate_preference_batch([dataset[0], dataset[1]])
-        self.assertEqual(batch.prompts, ["cat", "dog"])
+        self.assertEqual(batch.prompts, load_prompt_file(self.prompt_file, limit=2))
         self.assertEqual(tuple(batch.input_ids.shape), (2, 8))
         self.assertIsNone(batch.chosen)
         self.assertIsNone(batch.rejected)

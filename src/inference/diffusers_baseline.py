@@ -236,7 +236,7 @@ def build_parser() -> argparse.ArgumentParser:
     root = project_root()
     parser = argparse.ArgumentParser(description="Sample generic diffusers text-to-image baselines.")
     parser.add_argument("--pretrained-model-path", required=True)
-    parser.add_argument("--prompt-file", default=str(root / "scripts" / "experiments" / "aes_animals" / "simple_animals.jsonl"))
+    parser.add_argument("--prompt-file", default=str(root / "data" / "pickscore" / "test.txt"))
     parser.add_argument("--samples-dir", default=str(root / "samples"))
     parser.add_argument("--run-name", required=True)
     parser.add_argument("--model-type", required=True)

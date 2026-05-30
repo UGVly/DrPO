@@ -365,7 +365,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output_dir",
         default=str(root / "outputs" / "sdxl-turbo-lora" / "draft" / "pickscore" / datetime.now().strftime("%Y%m%d%H%M%S")),
     )
-    parser.add_argument("--prompt_file", default=str(root / "data" / "prompts" / "pickapicv2_test_unique.txt"))
+    parser.add_argument("--prompt_file", default=str(root / "data" / "pickscore" / "train.txt"))
     parser.add_argument("--model_variant", default="fp16")
     parser.add_argument("--choice_model", default="pickscore", choices=["pickscore"])
     parser.add_argument("--pickscore_model_name_or_path", default=str(root / "models" / "PickScore_v1"))

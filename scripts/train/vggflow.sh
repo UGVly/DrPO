@@ -16,7 +16,7 @@ accelerate launch \
   --pickscore_processor_name_or_path "$PROJECT_ROOT"/models/PickScore_v1 \
   --aesthetic_clip_model_path "$PROJECT_ROOT"/models/CLIP-ViT-L-14 \
   --aesthetic_ckpt_path "$PROJECT_ROOT"/models/Aesthetic/sac+logos+ava1-l14-linearMSE.pth \
-  --pairs_jsonl "$PROJECT_ROOT"/data/pairs.jsonl \
+  --train_prompt_file "$PROJECT_ROOT"/data/pickscore/train.txt \
   --choice_model pickscore \
   --output_dir "$PROJECT_ROOT"/outputs/vggflow/pickscore/default \
   --mixed_precision fp16 \
@@ -44,7 +44,7 @@ accelerate launch \
   --reward_mask_threshold 0.0 \
   --unet_reg_scale 0.0 \
   --vae_decode_chunk_size 4 \
-  --eval_prompt_file "$PROJECT_ROOT"/data/prompts/pickapicv2_test_unique.txt \
+  --eval_prompt_file "$PROJECT_ROOT"/data/pickscore/test.txt \
   --num_eval_prompts 10 \
   --eval_every_steps 0 \
   --seed 42 \

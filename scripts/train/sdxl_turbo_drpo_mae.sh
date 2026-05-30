@@ -13,7 +13,7 @@ accelerate launch \
   "$PROJECT_ROOT"/src/drpo/methods/sdxl_drpo/trainer.py \
   --pretrained_model_name_or_path "$PROJECT_ROOT"/models/stable-diffusion-xl-turbo \
   --mae_model_name_or_path "$PROJECT_ROOT"/models/facebook-vit-mae-base \
-  --prompt_file "$PROJECT_ROOT"/data/prompts/pickapicv2_test_unique.txt \
+  --prompt_file "$PROJECT_ROOT"/data/pickscore/train.txt \
   --output_dir "$PROJECT_ROOT"/outputs/sdxl-turbo-lora/drpo/mae/default \
   --feature_extractor mae \
   --mae_feature_keys layer12_patch_mean,layer12_patch_std,layer12_cls \

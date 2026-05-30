@@ -65,6 +65,24 @@ class ScriptCleanlinessTest(unittest.TestCase):
             for needle in disabled_defaults:
                 self.assertNotIn(needle, text, relative)
 
+    def test_default_data_paths_use_pickscore_splits(self):
+        forbidden = (
+            "data/pairs.jsonl",
+            "data/prompts/pickapicv2_test_unique.txt",
+            "data/prompts/simple_animals.txt",
+        )
+        checked_roots = [ROOT / "scripts", ROOT / "src", ROOT / "baselines", ROOT / "README.md"]
+        offenders: list[str] = []
+        for root in checked_roots:
+            paths = [root] if root.is_file() else sorted(root.rglob("*"))
+            for path in paths:
+                if not path.is_file() or path.suffix not in {".py", ".sh", ".md"}:
+                    continue
+                text = path.read_text(encoding="utf-8")
+                if any(needle in text for needle in forbidden):
+                    offenders.append(str(path.relative_to(ROOT)))
+        self.assertEqual(offenders, [])
+
 
 if __name__ == "__main__":
     unittest.main()

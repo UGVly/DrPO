@@ -12,7 +12,7 @@ accelerate launch \
   --main_process_port 29642 \
   "$PROJECT_ROOT"/src/drpo/methods/sdxl_drpo/trainer.py \
   --pretrained_model_name_or_path "$PROJECT_ROOT"/models/stable-diffusion-xl-turbo \
-  --prompt_file "$PROJECT_ROOT"/data/prompts/pickapicv2_test_unique.txt \
+  --prompt_file "$PROJECT_ROOT"/data/pickscore/train.txt \
   --output_dir "$PROJECT_ROOT"/outputs/sdxl-turbo-lora/drpo/teacher_unet/default \
   --feature_extractor teacher_unet \
   --teacher_feature_layers down_blocks.2,mid_block,up_blocks.0 \

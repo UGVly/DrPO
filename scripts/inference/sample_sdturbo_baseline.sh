@@ -8,7 +8,7 @@ export PYTHONPATH="$PROJECT_ROOT"/src
 
 python -m inference.sd_turbo_baseline \
   --pretrained-model-path "$PROJECT_ROOT"/models/sd-turbo \
-  --prompt-file "$PROJECT_ROOT"/data/prompts/pickapicv2_test_unique.txt \
+  --prompt-file "$PROJECT_ROOT"/data/pickscore/test.txt \
   --samples-dir "$PROJECT_ROOT"/samples \
   --run-name default \
   --seeds 42,43,44,45,46 \

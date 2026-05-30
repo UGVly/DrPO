@@ -1031,7 +1031,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train SDXL Turbo with online DrPO and MAE or teacher U-Net features.")
     parser.add_argument("--pretrained_model_name_or_path", default=str(root / "models" / "stable-diffusion-xl-turbo"))
     parser.add_argument("--output_dir", default=str(root / "outputs" / "sdxl-turbo-lora" / "drpo" / "mae" / datetime.now().strftime("%Y%m%d%H%M%S")))
-    parser.add_argument("--prompt_file", default=str(root / "data" / "prompts" / "pickapicv2_test_unique.txt"))
+    parser.add_argument("--prompt_file", default=str(root / "data" / "pickscore" / "train.txt"))
     parser.add_argument("--mae_model_name_or_path", default=str(root / "models" / "facebook-vit-mae-base"))
     parser.add_argument("--model_variant", default="fp16")
     parser.add_argument("--choice_model", default="pickscore")

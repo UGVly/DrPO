@@ -12,7 +12,7 @@ accelerate launch \
   --main_process_port 29671 \
   "$PROJECT_ROOT"/src/drpo/methods/sdxl_grpo/trainer.py \
   --pretrained_model_name_or_path "$PROJECT_ROOT"/models/stable-diffusion-xl-turbo \
-  --prompt_file "$PROJECT_ROOT"/data/prompts/pickapicv2_test_unique.txt \
+  --prompt_file "$PROJECT_ROOT"/data/pickscore/train.txt \
   --pickscore_model_name_or_path "$PROJECT_ROOT"/models/PickScore_v1 \
   --pickscore_processor_name_or_path "$PROJECT_ROOT"/models/PickScore_v1 \
   --choice_model pickscore \

@@ -355,7 +355,7 @@ class PairsPromptDataset(Dataset):
     train_mode == offline: yields prompt + chosen/rejected image tensors.
     train_mode == offline_distance: yields prompt + chosen/rejected image tensors,
         but uses them as feature-distance references for pseudo-online ranking.
-    train_mode == online: yields prompt only.
+    train_mode == online: yields prompt only from a JSONL or plain text prompt file.
     """
 
     def __init__(
@@ -371,13 +371,28 @@ class PairsPromptDataset(Dataset):
         self.tokenizer = tokenizer
         self.train_mode = train_mode
         self.proportion_empty_prompts = proportion_empty_prompts
-        self.base_dir = os.path.dirname(os.path.abspath(pairs_jsonl))
+        self.path = str(pairs_jsonl)
+        self.base_dir = os.path.dirname(os.path.abspath(self.path))
         self.rows: List[Dict[str, str]] = []
-        with open(pairs_jsonl, "r", encoding="utf-8") as f:
-            for line in f:
+        with open(self.path, "r", encoding="utf-8") as f:
+            for line_number, line in enumerate(f, start=1):
                 if not line.strip():
                     continue
-                self.rows.append(json.loads(line))
+                if train_mode == "online" and not self.path.endswith(".jsonl"):
+                    self.rows.append({"prompt": line.strip()})
+                    continue
+                try:
+                    self.rows.append(json.loads(line))
+                except json.JSONDecodeError as exc:
+                    if train_mode == "online":
+                        self.rows.append({"prompt": line.strip()})
+                    else:
+                        raise ValueError(
+                            f"Offline mode expects JSONL rows with chosen/rejected paths; "
+                            f"failed to parse {self.path}:{line_number}."
+                        ) from exc
+        if not self.rows:
+            raise ValueError(f"No prompts found in {self.path}.")
         if max_train_samples is not None:
             rng = random.Random(seed)
             rng.shuffle(self.rows)
@@ -1513,7 +1528,7 @@ def parse_args():
     parser.add_argument(
         "--train_mode",
         type=str,
-        default="offline",
+        default="online",
         choices=["offline", "online", "offline_distance"],
         help=(
             "offline: use dataset chosen/rejected directly as drifting anchors; "
@@ -1522,7 +1537,14 @@ def parse_args():
             "to rank generated candidates and build pseudo-online preference pairs."
         ),
     )
-    parser.add_argument("--pairs_jsonl", type=str, default=os.path.join(PROJECT_ROOT, "data", "pairs.jsonl"))
+    parser.add_argument(
+        "--pairs_jsonl",
+        "--train_prompt_file",
+        dest="pairs_jsonl",
+        type=str,
+        default=os.path.join(PROJECT_ROOT, "data", "pickscore", "train.txt"),
+        help="Prompt txt for online mode, or preference-pair JSONL for offline modes.",
+    )
     parser.add_argument(
         "--choice_model",
         type=str,
@@ -1689,7 +1711,7 @@ def parse_args():
     parser.add_argument(
         "--eval_prompt_file",
         type=str,
-        default=os.path.join(PROJECT_ROOT, "data", "prompts", "pickapicv2_test_unique.txt"),
+        default=os.path.join(PROJECT_ROOT, "data", "pickscore", "test.txt"),
     )
     parser.add_argument("--num_eval_prompts", type=int, default=10)
     parser.add_argument("--eval_every_steps", type=int, default=50)

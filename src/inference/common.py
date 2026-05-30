@@ -293,7 +293,7 @@ def sample_tasks(
 def add_common_sampling_args(parser: argparse.ArgumentParser) -> None:
     root = project_root()
     parser.add_argument("--pretrained-model-path", default=str(root / "models" / "sd-turbo"))
-    parser.add_argument("--prompt-file", default=str(root / "data" / "prompts" / "pickapicv2_test_unique.txt"))
+    parser.add_argument("--prompt-file", default=str(root / "data" / "pickscore" / "test.txt"))
     parser.add_argument("--samples-dir", default=str(root / "samples"))
     parser.add_argument("--seeds", default=",".join(str(seed) for seed in DEFAULT_SEEDS))
     parser.add_argument("--max-prompts", type=int, default=None)

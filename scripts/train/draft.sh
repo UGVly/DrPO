@@ -14,7 +14,7 @@ accelerate launch \
   --pretrained_model_name_or_path "$PROJECT_ROOT"/models/sd-turbo \
   --pickscore_model_name_or_path "$PROJECT_ROOT"/models/PickScore_v1 \
   --pickscore_processor_name_or_path "$PROJECT_ROOT"/models/PickScore_v1 \
-  --pairs_jsonl "$PROJECT_ROOT"/data/pairs.jsonl \
+  --train_prompt_file "$PROJECT_ROOT"/data/pickscore/train.txt \
   --choice_model pickscore \
   --output_dir "$PROJECT_ROOT"/outputs/draft/sdturbo_lora/pickscore_default \
   --mixed_precision fp16 \
@@ -36,7 +36,7 @@ accelerate launch \
   --pickscore_loss_weight 1.0 \
   --ref_model_l2_weight 0.0 \
   --score_std_weight 0.0 \
-  --eval_prompt_file "$PROJECT_ROOT"/data/prompts/pickapicv2_test_unique.txt \
+  --eval_prompt_file "$PROJECT_ROOT"/data/pickscore/test.txt \
   --num_eval_prompts 10 \
   --eval_every_steps 0 \
   --eval_seed 1234

@@ -18,14 +18,9 @@ __pycache__/
 /runs/
 
 /data/*
-!/data/pairs.jsonl
 !/data/pickscore/
 /data/pickscore/*
 !/data/pickscore/*.txt
-!/data/prompts/
-/data/prompts/*
-!/data/prompts/simple_animals.txt
-!/data/prompts/pickapicv2_test_unique.txt
 /models/
 /drifting/
 /third_party/

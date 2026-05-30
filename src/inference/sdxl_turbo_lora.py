@@ -156,7 +156,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Sample SDXL-Turbo UNet LoRA checkpoints.")
     parser.add_argument("--pretrained-model-path", default=str(root / "models" / "stable-diffusion-xl-turbo"))
     parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--prompt-file", default=str(root / "data" / "prompts" / "pickapicv2_test_unique.txt"))
+    parser.add_argument("--prompt-file", default=str(root / "data" / "pickscore" / "test.txt"))
     parser.add_argument("--samples-dir", default=str(root / "samples"))
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--manifest-path", default=None)
