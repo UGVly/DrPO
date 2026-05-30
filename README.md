@@ -33,7 +33,7 @@ cd DrPO
 
 conda env create -f environment.yml
 conda activate drpo
-pip install -e ".[dev]"
+pip install -e .
 ```
 
 The code expects model weights to be available locally. It does not download
