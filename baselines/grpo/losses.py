@@ -1,7 +1,5 @@
 """Loss helpers for one-step Neighbor GRPO training."""
 
-from __future__ import annotations
-
 import math
 from typing import Literal
 

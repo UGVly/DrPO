@@ -9,8 +9,6 @@ The implementation is self-contained under ``baselines`` and does not import
 project-internal training modules.
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 import sys

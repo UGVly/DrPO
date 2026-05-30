@@ -5,8 +5,6 @@ compute a differentiable reward gradient in clean-latent space, clip it by a
 running norm threshold, and build a reference-plus-gradient target.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path

@@ -11,8 +11,6 @@ The value-network consistency branch from the multi-step official code is not
 used here because the distilled SD-Turbo setup trains one transition.
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 import sys

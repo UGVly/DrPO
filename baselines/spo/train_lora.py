@@ -9,8 +9,6 @@ clean latent is treated as the action under a Gaussian policy centered at the
 UNet-predicted one-step clean latent.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import logging

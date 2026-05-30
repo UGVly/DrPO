@@ -1,7 +1,5 @@
 """Loss helpers for one-step SPO training."""
 
-from __future__ import annotations
-
 from typing import Dict, Tuple
 
 import torch

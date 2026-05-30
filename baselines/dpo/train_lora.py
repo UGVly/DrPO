@@ -13,8 +13,6 @@ Two preference spaces are supported:
 2. Frozen feature-extractor space (`--preference_space mae_latent|dino_image`)
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import logging
