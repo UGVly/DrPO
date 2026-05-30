@@ -3,130 +3,370 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Drifting Preference Optimization</title>
+    <title>DrPO | Drifting Preference Optimization</title>
     <meta
       name="description"
-      content="Project page for Drifting Preference Optimization, a preference optimization method for one-step text-to-image diffusion models."
+      content="Project page for Drifting Preference Optimization for One-Step Generative Models."
     >
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
     <header class="site-header">
-      <a class="brand" href="#top">DrPO</a>
+      <a class="brand" href="#top" aria-label="DrPO home">DrPO</a>
       <nav aria-label="Page navigation">
         <a href="#abstract">Abstract</a>
         <a href="#method">Method</a>
-        <a href="#release">Release</a>
-        <a href="#training">Training</a>
+        <a href="#results">Results</a>
+        <a href="#qualitative">Qualitative</a>
+        <a href="#code">Code</a>
       </nav>
     </header>
 
     <main id="top">
       <section class="hero">
-        <p class="eyebrow">One-step text-to-image diffusion</p>
-        <h1>Drifting Preference Optimization</h1>
-        <p class="lead">
-          Preference optimization for fast text-to-image generators using
-          reward-guided candidate selection and feature-space drifting.
+        <p class="venue">Paper Project Page</p>
+        <h1>Drifting Preference Optimization for One-Step Generative Models</h1>
+        <p class="subtitle">
+          Online preference finetuning for deterministic one-step text-to-image
+          generators using reward-ranked samples, dipole preference fields, and
+          reference drift.
         </p>
-        <div class="hero-actions" aria-label="Project links">
-          <a class="button primary" href="https://github.com/UGVly/DrPO">Code</a>
-          <a class="button secondary" href="#training">Training Recipes</a>
+        <p class="authors">
+          Zhou Jiang<sup>1</sup> &nbsp; Yandong Wen<sup>1</sup> &nbsp;
+          Zhen Liu<sup>2,*</sup>
+        </p>
+        <p class="affiliations">
+          <sup>1</sup>Westlake University &nbsp; <sup>2</sup>The Chinese University of Hong Kong, Shenzhen
+        </p>
+        <div class="project-links" aria-label="Project links">
+          <a href="assets/drpo-paper.pdf">Paper PDF</a>
+          <a href="https://github.com/UGVly/DrPO">Code</a>
+          <a href="#code">Training</a>
         </div>
       </section>
 
-      <figure class="teaser">
-        <img src="assets/drpo-teaser.svg" alt="Overview diagram of DrPO candidate generation, preference ranking, and feature-space drifting.">
-        <figcaption>
-          DrPO samples candidates from a one-step generator, ranks them with a
-          preference model, and updates feature geometry toward preferred
-          generations while anchoring the reference model.
-        </figcaption>
-      </figure>
+      <section class="snapshot" aria-label="Key claims">
+        <article>
+          <strong>1-step</strong>
+          <span>inference is preserved after finetuning</span>
+        </article>
+        <article>
+          <strong>No reward gradients</strong>
+          <span>the target reward is only used for ranking</span>
+        </article>
+        <article>
+          <strong>3.51x</strong>
+          <span>HPSv3 per-update speedup over reward-gradient training</span>
+        </article>
+        <article>
+          <strong>Black-box ready</strong>
+          <span>works with large or non-differentiable rewards</span>
+        </article>
+      </section>
+
+      <section class="teaser section-band">
+        <div class="section-heading">
+          <p>Overview</p>
+          <h2>Reward-ranked samples become a drifting field.</h2>
+        </div>
+        <div class="teaser-grid">
+          <figure class="paper-figure figure-wide">
+            <img src="assets/drpo-algorithm.webp" alt="DrPO algorithm overview with candidate generation, reward ranking, feature extraction, reference samples, and feature-space regression.">
+            <figcaption>
+              The current generator samples candidates for each prompt. A target reward
+              ranks them into positive and negative supports, and the frozen reference
+              generator supplies a stabilizing drift.
+            </figcaption>
+          </figure>
+          <figure class="paper-figure">
+            <img src="assets/drpo-trajectory.webp" alt="Qualitative samples along DrPO online finetuning trajectory.">
+            <figcaption>
+              Fixed prompts along the online finetuning trajectory show the generator
+              moving toward more preference-aligned outputs.
+            </figcaption>
+          </figure>
+        </div>
+      </section>
 
       <section id="abstract" class="section">
-        <h2>Abstract</h2>
-        <p>
-          One-step diffusion models provide fast text-to-image generation, but
-          direct preference optimization can be unstable when rewards are sparse
-          or noisy. DrPO trains lightweight LoRA adapters by repeatedly
-          generating candidate images, selecting preferred and dispreferred
-          samples with a reward model, and optimizing feature-level drifting
-          objectives. The released code includes SDXL-Turbo DrPO trainers,
-          SD-Turbo comparison baselines, PickScore prompt splits, and sampling
-          and evaluation utilities.
+        <div class="section-heading">
+          <p>Abstract</p>
+          <h2>Preference optimization without likelihoods, denoising trajectories, or reward backpropagation.</h2>
+        </div>
+        <p class="abstract-text">
+          One-step text-to-image generators are attractive for deployment because
+          they generate an image with a single forward pass, but preference
+          finetuning them remains difficult. DrPO is an online preference-finetuning
+          method for deterministic one-step generators. For each prompt, DrPO
+          samples candidates from the current generator, ranks them with a target
+          reward, and uses high- and low-scoring samples to synthesize a
+          feature-space update direction. The update combines a non-parametric
+          dipole preference field with a reference drift estimated from the frozen
+          base generator, and is optimized through a detached feature-space
+          regression target. The target reward is used only for ranking, so DrPO
+          can train with large, black-box, or non-differentiable rewards while
+          inference remains a single generator call.
         </p>
       </section>
 
-      <section id="method" class="section">
-        <h2>Method Overview</h2>
-        <div class="steps">
+      <section id="method" class="section section-band">
+        <div class="section-heading">
+          <p>Method</p>
+          <h2>Dipole preference drift plus reference correction.</h2>
+        </div>
+        <div class="method-grid">
           <article>
-            <span class="step-index">1</span>
-            <h3>Generate candidates</h3>
+            <span>01</span>
+            <h3>Generate on-policy candidates</h3>
             <p>
-              For each prompt, the one-step generator samples a candidate set
-              from random latent seeds.
+              For each prompt, DrPO samples a candidate set from the current
+              one-step generator under different latent seeds.
             </p>
           </article>
           <article>
-            <span class="step-index">2</span>
-            <h3>Select preferences</h3>
+            <span>02</span>
+            <h3>Rank with the target reward</h3>
             <p>
-              A frozen reward model ranks candidates and forms positive and
-              negative groups.
+              The reward model selects positive and negative supports. It does
+              not need to be differentiable through the generated image.
             </p>
           </article>
           <article>
-            <span class="step-index">3</span>
-            <h3>Drift features</h3>
+            <span>03</span>
+            <h3>Train toward a detached target</h3>
             <p>
-              DrPO shifts trainable model features toward preferred samples and
-              keeps the update anchored to the reference generator.
+              Preference and reference fields define a feature-space target, and
+              LoRA parameters are optimized with a regression loss.
             </p>
           </article>
         </div>
-      </section>
-
-      <section id="release" class="section">
-        <h2>Release Contents</h2>
-        <div class="release-grid">
-          <div>
-            <h3>Models</h3>
-            <p>SDXL-Turbo DrPO with MAE and teacher U-Net feature backends.</p>
-          </div>
-          <div>
-            <h3>Baselines</h3>
-            <p>Compact SD-Turbo implementations of Draft, DPO, GRPO, SPO, and VGGFlow.</p>
-          </div>
-          <div>
-            <h3>Data</h3>
-            <p>PickScore training and test prompt splits under <code>data/pickscore/</code>.</p>
-          </div>
-          <div>
-            <h3>Evaluation</h3>
-            <p>Sampling scripts and reward-based metric utilities for generated manifests.</p>
-          </div>
+        <div class="drift-figures">
+          <figure class="paper-figure">
+            <img src="assets/drift-preference.webp" alt="Preference drift moves generated features toward positive samples and away from negative samples.">
+            <figcaption>Positive samples attract while negative samples repel.</figcaption>
+          </figure>
+          <figure class="paper-figure">
+            <img src="assets/drift-reference.webp" alt="Reference drift combines preference motion with a correction toward the frozen base generator.">
+            <figcaption>The reference branch keeps the update near the base generator prior.</figcaption>
+          </figure>
         </div>
       </section>
 
-      <section id="training" class="section">
-        <h2>Training Recipes</h2>
-        <p>
-          The default scripts use local model weights under <code>models/</code>
-          and prompts from <code>data/pickscore/train.txt</code>.
+      <section id="results" class="section">
+        <div class="section-heading">
+          <p>Results</p>
+          <h2>DrPO gives the largest reward-gradient-free gains among one-step preference baselines.</h2>
+        </div>
+        <div class="table-wrap" role="region" aria-label="Main comparison table" tabindex="0">
+          <table>
+            <thead>
+              <tr>
+                <th rowspan="2">Method</th>
+                <th rowspan="2">Steps</th>
+                <th rowspan="2">Reward grad.</th>
+                <th colspan="3">Pick-a-Pic v2 Test</th>
+                <th colspan="3">Parti-Prompts</th>
+              </tr>
+              <tr>
+                <th>PS</th>
+                <th>AES</th>
+                <th>IR</th>
+                <th>PS</th>
+                <th>AES</th>
+                <th>IR</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>SD-Turbo base</td>
+                <td>1</td>
+                <td>-</td>
+                <td>21.88</td>
+                <td>6.054</td>
+                <td>5.75</td>
+                <td>22.29</td>
+                <td>5.758</td>
+                <td>5.37</td>
+              </tr>
+              <tr>
+                <td>DRaFT</td>
+                <td>1</td>
+                <td>Yes</td>
+                <td>24.69</td>
+                <td>6.820</td>
+                <td>9.63</td>
+                <td>23.07</td>
+                <td>6.516</td>
+                <td>7.72</td>
+              </tr>
+              <tr>
+                <td>VGGFlow</td>
+                <td>1</td>
+                <td>Yes</td>
+                <td>23.73</td>
+                <td>6.378</td>
+                <td>7.74</td>
+                <td>22.99</td>
+                <td>6.027</td>
+                <td>6.50</td>
+              </tr>
+              <tr>
+                <td>DPO<sub>1step</sub></td>
+                <td>1</td>
+                <td>No</td>
+                <td>22.02</td>
+                <td>6.080</td>
+                <td>5.95</td>
+                <td>22.39</td>
+                <td>5.793</td>
+                <td>5.21</td>
+              </tr>
+              <tr>
+                <td>PSO</td>
+                <td>1</td>
+                <td>No</td>
+                <td>21.88</td>
+                <td>6.059</td>
+                <td>5.80</td>
+                <td>22.29</td>
+                <td>5.763</td>
+                <td>5.42</td>
+              </tr>
+              <tr>
+                <td>GRPO<sub>1step</sub></td>
+                <td>1</td>
+                <td>No</td>
+                <td>21.98</td>
+                <td>6.077</td>
+                <td>6.08</td>
+                <td>22.35</td>
+                <td>5.779</td>
+                <td>5.65</td>
+              </tr>
+              <tr class="highlight-muted">
+                <td>DrPO w/o ref.</td>
+                <td>1</td>
+                <td>No</td>
+                <td>23.55</td>
+                <td>6.603</td>
+                <td>10.07</td>
+                <td>23.02</td>
+                <td>6.384</td>
+                <td>7.89</td>
+              </tr>
+              <tr class="highlight">
+                <td>DrPO</td>
+                <td>1</td>
+                <td>No</td>
+                <td>23.50</td>
+                <td>6.486</td>
+                <td>9.54</td>
+                <td>22.99</td>
+                <td>6.284</td>
+                <td>7.46</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="result-cards">
+          <article>
+            <h3>SDXL-Turbo transfer</h3>
+            <p>
+              DrPO improves SDXL-Turbo from 22.42 to 22.97 PickScore, 9.07 to
+              10.66 ImageReward, and 36.34 to 36.66 HPSv2 while keeping a
+              one-step, zero-guidance sampler.
+            </p>
+          </article>
+          <article>
+            <h3>Large reward models</h3>
+            <p>
+              With HPSv3, DrPO removes reward-model backpropagation and reduces
+              matched-batch update time from 21.62s to 6.17s.
+            </p>
+          </article>
+          <article>
+            <h3>Discrete rewards</h3>
+            <p>
+              GenEval-style correctness checks can be used directly because DrPO
+              only needs candidate rankings or binary correctness signals.
+            </p>
+          </article>
+        </div>
+
+        <div class="chart-grid">
+          <figure class="paper-figure">
+            <img src="assets/qwen3vl-pickapic.png" alt="Qwen3-VL pairwise preference chart on Pick-a-Pic v2.">
+            <figcaption>Qwen3-VL pairwise preference evaluation on Pick-a-Pic v2.</figcaption>
+          </figure>
+          <figure class="paper-figure">
+            <img src="assets/qwen3vl-parti.png" alt="Qwen3-VL pairwise preference chart on Parti-Prompts.">
+            <figcaption>Qwen3-VL pairwise preference evaluation on Parti-Prompts.</figcaption>
+          </figure>
+        </div>
+        <div class="metric-figures">
+          <figure class="paper-figure">
+            <img src="assets/reward-curves.webp" alt="Reward convergence curves for different training methods.">
+            <figcaption>Reward convergence curves under matched one-step finetuning.</figcaption>
+          </figure>
+          <figure class="paper-figure">
+            <img src="assets/hpsv3-profile.webp" alt="HPSv3 wall-clock evaluation curve comparing DrPO and DRaFT.">
+            <figcaption>HPSv3 training progresses faster without reward backpropagation.</figcaption>
+          </figure>
+          <figure class="paper-figure">
+            <img src="assets/geneval-examples.webp" alt="GenEval-style online DrPO examples for cups, clocks, sheep, and apples.">
+            <figcaption>Non-differentiable GenEval-style checks can provide ranking signals.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section id="qualitative" class="section section-band">
+        <div class="section-heading">
+          <p>Qualitative</p>
+          <h2>Matched-prompt comparisons and reward-model ablations.</h2>
+        </div>
+        <figure class="paper-figure full">
+          <img src="assets/qualitative-grid.webp" alt="Qualitative comparison across SD-Turbo, DPO, DRaFT, VGGFlow, PSO, GRPO, and DrPO.">
+          <figcaption>
+            Headline comparison on selected Pick-a-Pic v2 prompts. DrPO improves
+            preference-aligned visual quality while preserving one-step inference.
+          </figcaption>
+        </figure>
+        <figure class="paper-figure full">
+          <img src="assets/reward-model-matrix.webp" alt="Qualitative comparison across different target reward models.">
+          <figcaption>
+            Swapping the target reward changes the optimized behavior while the
+            same drifting update is reused.
+          </figcaption>
+        </figure>
+      </section>
+
+      <section id="code" class="section">
+        <div class="section-heading">
+          <p>Code</p>
+          <h2>Reproduce the released training recipes.</h2>
+        </div>
+        <p class="code-intro">
+          The repository contains compact SDXL-Turbo DrPO trainers, SD-Turbo
+          baselines, PickScore prompt splits, sampling utilities, and model
+          asset checks.
         </p>
         <div class="commands">
-          <pre><code>bash scripts/train/sdxl_turbo_drpo_teacher.sh
+          <pre><code>git clone https://github.com/UGVly/DrPO.git
+cd DrPO
+conda env create -f environment.yml
+conda activate drpo
+pip install -e .</code></pre>
+          <pre><code>python scripts/check_local_assets.py
+bash scripts/train/sdxl_turbo_drpo_teacher.sh
 bash scripts/train/sdxl_turbo_drpo_mae.sh
-bash scripts/train/sdxl_turbo_draft.sh</code></pre>
-          <pre><code>bash scripts/train/draft.sh
-bash scripts/train/dpo.sh
-bash scripts/train/grpo.sh
-bash scripts/train/spo.sh
-bash scripts/train/vggflow.sh</code></pre>
+bash scripts/train/draft.sh</code></pre>
         </div>
       </section>
     </main>
+
+    <footer>
+      <p>* Corresponding author.</p>
+    </footer>
   </body>
 </html>
