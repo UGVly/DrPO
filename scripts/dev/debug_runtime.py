@@ -42,7 +42,8 @@ def check_local_assets() -> None:
     missing = []
     for asset, exists in check_assets():
         state = "OK" if exists else "MISSING"
-        print(f"{state:7s} asset             {asset.name:18s} {asset.path}")
+        group = "optional" if asset.optional else "default"
+        print(f"{state:7s} {group:8s} asset             {asset.name:18s} {asset.path}")
         if not exists:
             missing.append(asset)
     if missing:
