@@ -1,19 +1,15 @@
 # Comparison Baselines
 
-This directory contains LoRA-only comparison algorithms outside the reusable `src/drpo` package.
+This directory contains compact SD-Turbo comparison baselines used with DrPO.
 
-Each baseline keeps its training implementation self-contained. The GRPO baseline is the fused neighbor-based variant; the older plain GRPO and Neighbor-GRPO paths are no longer separate algorithms.
+Available methods:
 
 ```text
-draft/train_lora.py
-dpo/train_lora.py
-grpo/train_lora.py
-grpo/trainer.py
-grpo/losses.py
-spo/train_lora.py
-spo/losses.py
-vggflow/train_lora.py
-vggflow/reward_gradient.py
+Draft
+DPO
+GRPO
+SPO
+VGGFlow
 ```
 
-Use the matching `scripts/train/<method>.sh` wrapper for normal launches.
+Use the corresponding wrapper in `scripts/train/` for training.
