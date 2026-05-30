@@ -431,10 +431,6 @@ tbody tr:last-child td {
   object-fit: cover;
 }
 
-.qual-gallery .ours img {
-  border: 3px solid var(--green);
-}
-
 .qual-gallery figcaption {
   margin-top: 4px;
   color: var(--ink);
