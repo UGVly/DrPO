@@ -213,8 +213,7 @@ h1 {
   line-height: 1.12;
 }
 
-.abstract-text,
-.code-intro {
+.abstract-text {
   max-width: 900px;
   margin-bottom: 0;
   color: var(--muted);
@@ -224,7 +223,6 @@ h1 {
 .teaser-grid,
 .chart-grid,
 .metric-figures,
-.commands,
 .result-cards,
 .formula-grid,
 .method-grid {
@@ -476,24 +474,6 @@ tbody tr:last-child td {
   text-align: center;
 }
 
-.commands {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 24px;
-}
-
-pre {
-  overflow-x: auto;
-  min-height: 172px;
-  margin: 0;
-  padding: 20px;
-  border: 1px solid #273039;
-  border-radius: 8px;
-  background: #171d22;
-  color: #ecf3f4;
-  font-size: 14px;
-  line-height: 1.75;
-}
-
 code {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.94em;
@@ -535,8 +515,7 @@ footer p {
   .formula-grid,
   .result-cards,
   .chart-grid,
-  .metric-figures,
-  .commands {
+  .metric-figures {
     grid-template-columns: 1fr;
   }
 
