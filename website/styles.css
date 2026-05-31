@@ -610,18 +610,6 @@ footer p {
     padding-bottom: 52px;
   }
 
-  .teaser-grid .paper-figure {
-    min-height: auto;
-  }
-
-  .teaser-grid .paper-figure img {
-    height: auto;
-  }
-
-  .teaser-grid figcaption {
-    min-height: auto;
-  }
-
   .qual-gallery {
     grid-template-columns: repeat(7, minmax(104px, 1fr));
     overflow-x: auto;
