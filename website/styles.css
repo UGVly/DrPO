@@ -241,7 +241,25 @@ h1 {
 
 .teaser-grid {
   grid-template-columns: minmax(0, 1.6fr) minmax(260px, 0.72fr);
-  align-items: start;
+  align-items: stretch;
+}
+
+.teaser-grid .paper-figure {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+}
+
+.teaser-grid .paper-figure img {
+  height: clamp(360px, 44vw, 540px);
+  object-fit: contain;
+}
+
+.teaser-grid figcaption {
+  display: flex;
+  min-height: 68px;
+  align-items: center;
+  justify-content: center;
 }
 
 .paper-figure {
@@ -590,6 +608,18 @@ footer p {
   .section {
     padding-top: 52px;
     padding-bottom: 52px;
+  }
+
+  .teaser-grid .paper-figure {
+    min-height: auto;
+  }
+
+  .teaser-grid .paper-figure img {
+    height: auto;
+  }
+
+  .teaser-grid figcaption {
+    min-height: auto;
   }
 
   .qual-gallery {
