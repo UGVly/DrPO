@@ -337,13 +337,124 @@
           <p>Qualitative</p>
           <h2>Matched-prompt comparisons and reward-model ablations.</h2>
         </div>
-        <figure class="paper-figure full">
-          <img src="assets/sdxl-main.webp" alt="Qualitative comparison across SDXL-Turbo, DPO, GRPO, DRaFT, VGGFlow, and DrPO.">
-          <figcaption>
-            Qualitative comparison on Pick-a-Pic v2 prompts for SDXL-Turbo,
-            matching the main quantitative table in arxiv.tex.
-          </figcaption>
-        </figure>
+        <div class="qual-comparison sdxl-comparison" aria-label="SDXL-Turbo qualitative comparison">
+          <article class="qual-set">
+            <h3>A tourist is looking at a whale using binoculars</h3>
+            <div class="qual-gallery">
+              <figure>
+                <img src="assets/sdxl-qualitative/whale-sdxl-turbo.webp" alt="SDXL-Turbo result for the tourist binoculars prompt.">
+                <figcaption>SDXL-Turbo</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/whale-dpo.webp" alt="DPO result for the tourist binoculars prompt.">
+                <figcaption>DPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/whale-grpo.webp" alt="GRPO result for the tourist binoculars prompt.">
+                <figcaption>GRPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/whale-draft.webp" alt="DRaFT result for the tourist binoculars prompt.">
+                <figcaption>DRaFT</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/whale-vggflow.webp" alt="VGGFlow result for the tourist binoculars prompt.">
+                <figcaption>VGGFlow</figcaption>
+              </figure>
+              <figure class="ours">
+                <img src="assets/sdxl-qualitative/whale-drpo.webp" alt="DrPO result for the tourist binoculars prompt.">
+                <figcaption>DrPO</figcaption>
+              </figure>
+            </div>
+          </article>
+          <article class="qual-set">
+            <h3>A dolphin in an astronaut suit on Saturn</h3>
+            <div class="qual-gallery">
+              <figure>
+                <img src="assets/sdxl-qualitative/dolphin-sdxl-turbo.webp" alt="SDXL-Turbo result for the astronaut suit prompt.">
+                <figcaption>SDXL-Turbo</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/dolphin-dpo.webp" alt="DPO result for the astronaut suit prompt.">
+                <figcaption>DPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/dolphin-grpo.webp" alt="GRPO result for the astronaut suit prompt.">
+                <figcaption>GRPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/dolphin-draft.webp" alt="DRaFT result for the astronaut suit prompt.">
+                <figcaption>DRaFT</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/dolphin-vggflow.webp" alt="VGGFlow result for the astronaut suit prompt.">
+                <figcaption>VGGFlow</figcaption>
+              </figure>
+              <figure class="ours">
+                <img src="assets/sdxl-qualitative/dolphin-drpo.webp" alt="DrPO result for the astronaut suit prompt.">
+                <figcaption>DrPO</figcaption>
+              </figure>
+            </div>
+          </article>
+          <article class="qual-set">
+            <h3>A wine bottle with a lit candle in its spout</h3>
+            <div class="qual-gallery">
+              <figure>
+                <img src="assets/sdxl-qualitative/candle-sdxl-turbo.webp" alt="SDXL-Turbo result for the wine bottle candle prompt.">
+                <figcaption>SDXL-Turbo</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/candle-dpo.webp" alt="DPO result for the wine bottle candle prompt.">
+                <figcaption>DPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/candle-grpo.webp" alt="GRPO result for the wine bottle candle prompt.">
+                <figcaption>GRPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/candle-draft.webp" alt="DRaFT result for the wine bottle candle prompt.">
+                <figcaption>DRaFT</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/candle-vggflow.webp" alt="VGGFlow result for the wine bottle candle prompt.">
+                <figcaption>VGGFlow</figcaption>
+              </figure>
+              <figure class="ours">
+                <img src="assets/sdxl-qualitative/candle-drpo.webp" alt="DrPO result for the wine bottle candle prompt.">
+                <figcaption>DrPO</figcaption>
+              </figure>
+            </div>
+          </article>
+          <article class="qual-set">
+            <h3>Subway train with lobsters reading newspaper</h3>
+            <div class="qual-gallery">
+              <figure>
+                <img src="assets/sdxl-qualitative/lobster-sdxl-turbo.webp" alt="SDXL-Turbo result for the subway train prompt.">
+                <figcaption>SDXL-Turbo</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/lobster-dpo.webp" alt="DPO result for the subway train prompt.">
+                <figcaption>DPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/lobster-grpo.webp" alt="GRPO result for the subway train prompt.">
+                <figcaption>GRPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/lobster-draft.webp" alt="DRaFT result for the subway train prompt.">
+                <figcaption>DRaFT</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/lobster-vggflow.webp" alt="VGGFlow result for the subway train prompt.">
+                <figcaption>VGGFlow</figcaption>
+              </figure>
+              <figure class="ours">
+                <img src="assets/sdxl-qualitative/lobster-drpo.webp" alt="DrPO result for the subway train prompt.">
+                <figcaption>DrPO</figcaption>
+              </figure>
+            </div>
+          </article>
+        </div>
         <div class="qual-comparison" aria-label="SD-Turbo qualitative comparison">
           <article class="qual-set">
             <h3>Burger with wheels speeding on the race track, supercharged, detailed, hyperrealistic, 4K</h3>

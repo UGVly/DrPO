@@ -416,6 +416,10 @@ tbody tr:last-child td {
   padding-bottom: 0;
 }
 
+.sdxl-comparison .qual-gallery {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
 .qual-gallery figure {
   margin: 0;
   min-width: 0;
@@ -516,6 +520,10 @@ footer p {
   .qual-gallery {
     grid-template-columns: repeat(7, minmax(104px, 1fr));
     overflow-x: auto;
+  }
+
+  .sdxl-comparison .qual-gallery {
+    grid-template-columns: repeat(6, minmax(112px, 1fr));
   }
 }
 
