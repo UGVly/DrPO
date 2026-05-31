@@ -159,6 +159,11 @@ h1 {
   color: #fff;
 }
 
+.project-links .is-disabled {
+  opacity: 0.58;
+  cursor: default;
+}
+
 .snapshot {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
