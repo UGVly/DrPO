@@ -424,12 +424,12 @@ th,
 td {
   padding: 11px 12px;
   border-bottom: 1px solid var(--line);
-  text-align: right;
+  text-align: center;
+  vertical-align: middle;
   white-space: nowrap;
 }
 
-th:first-child,
-td:first-child {
+tbody td:first-child {
   text-align: left;
 }
 
