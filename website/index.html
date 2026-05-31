@@ -30,6 +30,7 @@
         <a href="#method">Method</a>
         <a href="#results">Results</a>
         <a href="#qualitative">Qualitative</a>
+        <a href="#tables">Tables</a>
       </nav>
     </header>
 
@@ -694,6 +695,437 @@
             same drifting update is reused.
           </figcaption>
         </figure>
+      </section>
+
+      <section id="tables" class="section">
+        <div class="section-heading">
+          <p>Tables</p>
+          <h2>Extended quantitative results.</h2>
+        </div>
+
+        <div class="table-wrap" role="region" aria-label="SD-Turbo comparison table" tabindex="0">
+          <table>
+            <caption>
+              Results on SD-Turbo. PS denotes PickScore x 100 and IR denotes ImageReward x 10.
+            </caption>
+            <thead>
+              <tr>
+                <th rowspan="2">Method</th>
+                <th rowspan="2">Steps</th>
+                <th rowspan="2">Reward grad.</th>
+                <th colspan="3">Pick-a-Pic v2 Test</th>
+                <th colspan="3">Parti-Prompts</th>
+              </tr>
+              <tr>
+                <th>PS</th>
+                <th>AES</th>
+                <th>IR</th>
+                <th>PS</th>
+                <th>AES</th>
+                <th>IR</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>SD1.5</td>
+                <td>50</td>
+                <td>-</td>
+                <td>20.79</td>
+                <td>5.455</td>
+                <td>1.22</td>
+                <td>21.49</td>
+                <td>5.358</td>
+                <td>2.25</td>
+              </tr>
+              <tr>
+                <td>LCM-SD1.5</td>
+                <td>4</td>
+                <td>-</td>
+                <td>20.50</td>
+                <td>5.497</td>
+                <td>-3.08</td>
+                <td>21.15</td>
+                <td>5.396</td>
+                <td>-1.94</td>
+              </tr>
+              <tr>
+                <td>SD2.1</td>
+                <td>50</td>
+                <td>-</td>
+                <td>21.09</td>
+                <td>5.645</td>
+                <td>2.49</td>
+                <td>21.77</td>
+                <td>5.547</td>
+                <td>3.97</td>
+              </tr>
+              <tr>
+                <td>SD-Turbo base</td>
+                <td>1</td>
+                <td>-</td>
+                <td>21.88</td>
+                <td>6.054</td>
+                <td>5.75</td>
+                <td>22.29</td>
+                <td>5.758</td>
+                <td>5.37</td>
+              </tr>
+              <tr>
+                <td>DRaFT</td>
+                <td>1</td>
+                <td>Yes</td>
+                <td>24.69</td>
+                <td>6.820</td>
+                <td>9.63</td>
+                <td>23.07</td>
+                <td>6.516</td>
+                <td>7.72</td>
+              </tr>
+              <tr>
+                <td>VGGFlow</td>
+                <td>1</td>
+                <td>Yes</td>
+                <td>23.73</td>
+                <td>6.378</td>
+                <td>7.74</td>
+                <td>22.99</td>
+                <td>6.027</td>
+                <td>6.50</td>
+              </tr>
+              <tr>
+                <td>DPO<sub>1step</sub></td>
+                <td>1</td>
+                <td>No</td>
+                <td>22.02</td>
+                <td>6.080</td>
+                <td>5.95</td>
+                <td>22.39</td>
+                <td>5.793</td>
+                <td>5.21</td>
+              </tr>
+              <tr>
+                <td>PSO</td>
+                <td>1</td>
+                <td>No</td>
+                <td>21.88</td>
+                <td>6.059</td>
+                <td>5.80</td>
+                <td>22.29</td>
+                <td>5.763</td>
+                <td>5.42</td>
+              </tr>
+              <tr>
+                <td>GRPO<sub>1step</sub></td>
+                <td>1</td>
+                <td>No</td>
+                <td>21.98</td>
+                <td>6.077</td>
+                <td>6.08</td>
+                <td>22.35</td>
+                <td>5.779</td>
+                <td>5.65</td>
+              </tr>
+              <tr class="highlight">
+                <td>DrPO</td>
+                <td>1</td>
+                <td>No</td>
+                <td>23.49</td>
+                <td>6.485</td>
+                <td>9.54</td>
+                <td>22.99</td>
+                <td>6.284</td>
+                <td>7.46</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="extended-table-grid">
+          <div class="table-wrap compact-table" role="region" aria-label="HPSv3 efficiency table" tabindex="0">
+            <table>
+              <caption>Efficiency comparison on HPSv3.</caption>
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>DRaFT</th>
+                  <th>DrPO</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Reward grad.</td>
+                  <td>Yes</td>
+                  <td>No</td>
+                </tr>
+                <tr>
+                  <td>Effective batch</td>
+                  <td>192</td>
+                  <td>192</td>
+                </tr>
+                <tr>
+                  <td>Update time (s)</td>
+                  <td>21.62</td>
+                  <td>6.17</td>
+                </tr>
+                <tr>
+                  <td>Speedup</td>
+                  <td>1.00x</td>
+                  <td>3.51x</td>
+                </tr>
+                <tr>
+                  <td>Backward (s)</td>
+                  <td>9.99</td>
+                  <td>0.34</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-table" role="region" aria-label="GenEval table" tabindex="0">
+            <table>
+              <caption>GenEval task performance.</caption>
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>SD-Turbo</th>
+                  <th>+DrPO</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Single</td>
+                  <td>98.8</td>
+                  <td>100.0</td>
+                </tr>
+                <tr>
+                  <td>Two</td>
+                  <td>46.5</td>
+                  <td>55.6</td>
+                </tr>
+                <tr>
+                  <td>Count</td>
+                  <td>33.8</td>
+                  <td>42.5</td>
+                </tr>
+                <tr>
+                  <td>Colors</td>
+                  <td>83.8</td>
+                  <td>87.2</td>
+                </tr>
+                <tr>
+                  <td>Position</td>
+                  <td>8.0</td>
+                  <td>13.0</td>
+                </tr>
+                <tr>
+                  <td>Color Attr.</td>
+                  <td>9.0</td>
+                  <td>13.0</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-table" role="region" aria-label="Reference objective table" tabindex="0">
+            <table>
+              <caption>Reference-objective comparison on Pick-a-Pic v2.</caption>
+              <thead>
+                <tr>
+                  <th>Objective</th>
+                  <th>PickScore</th>
+                  <th>CLIP</th>
+                  <th>AES</th>
+                  <th>HPSv2</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>No reference</td>
+                  <td>23.55</td>
+                  <td>25.88</td>
+                  <td>6.603</td>
+                  <td>34.85</td>
+                </tr>
+                <tr>
+                  <td>Perceptual loss</td>
+                  <td>23.42</td>
+                  <td>25.98</td>
+                  <td>6.455</td>
+                  <td>34.90</td>
+                </tr>
+                <tr class="highlight">
+                  <td>Ref. drift loss</td>
+                  <td>23.49</td>
+                  <td>26.22</td>
+                  <td>6.485</td>
+                  <td>35.07</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="ablation-grid">
+          <div class="table-wrap compact-table" role="region" aria-label="Candidate count ablation table" tabindex="0">
+            <table>
+              <caption>Batch generation.</caption>
+              <thead>
+                <tr>
+                  <th>Candidates</th>
+                  <th>PS</th>
+                  <th>AES</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>SD-Turbo</td>
+                  <td>21.88</td>
+                  <td>6.054</td>
+                </tr>
+                <tr>
+                  <td>K=16</td>
+                  <td>23.24</td>
+                  <td>6.409</td>
+                </tr>
+                <tr>
+                  <td>K=24</td>
+                  <td>23.53</td>
+                  <td>6.552</td>
+                </tr>
+                <tr class="highlight">
+                  <td>K=32</td>
+                  <td>23.57</td>
+                  <td>6.599</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-table" role="region" aria-label="Feature map ablation table" tabindex="0">
+            <table>
+              <caption>Feature map.</caption>
+              <thead>
+                <tr>
+                  <th>Feature</th>
+                  <th>PS</th>
+                  <th>AES</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>SD-Turbo</td>
+                  <td>21.88</td>
+                  <td>6.054</td>
+                </tr>
+                <tr class="highlight">
+                  <td>latent-MAE<sub>1</sub></td>
+                  <td>23.55</td>
+                  <td>6.513</td>
+                </tr>
+                <tr>
+                  <td>latent-MAE<sub>2</sub></td>
+                  <td>23.50</td>
+                  <td>6.526</td>
+                </tr>
+                <tr>
+                  <td>latent-MAE<sub>3</sub></td>
+                  <td>23.48</td>
+                  <td>6.506</td>
+                </tr>
+                <tr>
+                  <td>Latent</td>
+                  <td>20.52</td>
+                  <td>4.543</td>
+                </tr>
+                <tr>
+                  <td>VAE-dec. + DINOv2</td>
+                  <td>22.28</td>
+                  <td>6.252</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-table" role="region" aria-label="Kernel ablation table" tabindex="0">
+            <table>
+              <caption>Kernel.</caption>
+              <thead>
+                <tr>
+                  <th>Kernel</th>
+                  <th>PS</th>
+                  <th>AES</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>SD-Turbo</td>
+                  <td>21.88</td>
+                  <td>6.054</td>
+                </tr>
+                <tr class="highlight">
+                  <td>Cosine</td>
+                  <td>23.63</td>
+                  <td>6.509</td>
+                </tr>
+                <tr>
+                  <td>RBF</td>
+                  <td>23.50</td>
+                  <td>6.590</td>
+                </tr>
+                <tr>
+                  <td>Exponential</td>
+                  <td>23.53</td>
+                  <td>6.594</td>
+                </tr>
+                <tr>
+                  <td>Laplacian</td>
+                  <td>23.51</td>
+                  <td>6.515</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-table" role="region" aria-label="Velocity scale ablation table" tabindex="0">
+            <table>
+              <caption>Velocity scale eta.</caption>
+              <thead>
+                <tr>
+                  <th>Weight</th>
+                  <th>PS</th>
+                  <th>AES</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>SD-Turbo</td>
+                  <td>21.88</td>
+                  <td>6.054</td>
+                </tr>
+                <tr>
+                  <td>eta=1000</td>
+                  <td>23.51</td>
+                  <td>6.510</td>
+                </tr>
+                <tr class="highlight">
+                  <td>eta=3000</td>
+                  <td>23.53</td>
+                  <td>6.542</td>
+                </tr>
+                <tr>
+                  <td>eta=5000</td>
+                  <td>23.51</td>
+                  <td>6.485</td>
+                </tr>
+                <tr>
+                  <td>eta=10000</td>
+                  <td>23.46</td>
+                  <td>6.444</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
     </main>

@@ -224,6 +224,8 @@ h1 {
 .chart-grid,
 .metric-figures,
 .result-cards,
+.extended-table-grid,
+.ablation-grid,
 .formula-grid,
 .method-grid {
   display: grid;
@@ -339,6 +341,34 @@ h3 {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
+}
+
+.extended-table-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.ablation-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.compact-table {
+  margin-top: 0;
+}
+
+.compact-table table {
+  min-width: 0;
+  font-size: 13px;
+}
+
+.compact-table caption {
+  min-height: 56px;
+}
+
+.compact-table th,
+.compact-table td {
+  padding: 9px 10px;
 }
 
 table {
@@ -514,6 +544,8 @@ footer p {
   .method-grid,
   .formula-grid,
   .result-cards,
+  .extended-table-grid,
+  .ablation-grid,
   .chart-grid,
   .metric-figures {
     grid-template-columns: 1fr;
