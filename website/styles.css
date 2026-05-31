@@ -227,6 +227,7 @@ h1 {
 .metric-figures,
 .commands,
 .result-cards,
+.formula-grid,
 .method-grid {
   display: grid;
   gap: 18px;
@@ -297,6 +298,42 @@ h3 {
 .result-cards p {
   margin-bottom: 0;
   color: var(--muted);
+}
+
+.formula-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 24px 0;
+}
+
+.formula-card {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.formula-card-wide {
+  grid-column: 1 / -1;
+}
+
+.formula-card p {
+  margin-bottom: 12px;
+  color: var(--muted);
+}
+
+.equation {
+  overflow-x: auto;
+  padding: 14px 16px;
+  border: 1px solid #e6ecef;
+  border-radius: 8px;
+  background: #f9fbfb;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.equation mjx-container[jax="SVG"] {
+  min-width: max-content;
 }
 
 .drift-figures {
@@ -500,6 +537,7 @@ footer p {
   .snapshot,
   .teaser-grid,
   .method-grid,
+  .formula-grid,
   .drift-figures,
   .result-cards,
   .chart-grid,

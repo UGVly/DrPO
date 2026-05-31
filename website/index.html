@@ -9,6 +9,18 @@
       content="Project page for Drifting Preference Optimization for One-Step Generative Models."
     >
     <link rel="stylesheet" href="styles.css">
+    <script>
+      window.MathJax = {
+        tex: {
+          inlineMath: [["\\(", "\\)"]],
+          displayMath: [["\\[", "\\]"]]
+        },
+        svg: {
+          fontCache: "global"
+        }
+      };
+    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
   </head>
   <body>
     <header class="site-header">
@@ -137,6 +149,103 @@
               Preference and reference fields define a feature-space target, and
               LoRA parameters are optimized with a regression loss.
             </p>
+          </article>
+        </div>
+        <div class="formula-grid" aria-label="DrPO core equations">
+          <article class="formula-card formula-card-wide">
+            <h3>Reference-regularized update</h3>
+            <p>
+              DrPO starts from the feature-space pathwise gradient and replaces
+              inaccessible reward and density scores with sample-based drifting estimates.
+            </p>
+            <div class="equation">
+              \[
+              \nabla_\theta J=
+              \mathbb{E}_{\epsilon}
+              \left[
+              \left(
+              \nabla_z\log R(z)+
+              \lambda\left(
+              \nabla_z\log p_\mathrm{base}(z)-
+              \nabla_z\log p_\theta(z)
+              \right)
+              \right)
+              \nabla_\theta z
+              \right]
+              \]
+            </div>
+          </article>
+          <article class="formula-card">
+            <h3>Dipole reward</h3>
+            <p>
+              Reward-ranked samples define positive and negative feature supports.
+            </p>
+            <div class="equation">
+              \[
+              \mathcal{A}^+=\{\phi(x_j^+)\}_{j=1}^{M},\qquad
+              \mathcal{A}^-=\{\phi(x_j^-)\}_{j=1}^{M}
+              \]
+              \[
+              R_\mathrm{dipole}(z)=\exp(E(z)),\quad
+              E(z)=\gamma\sum_{j=1}^{M}
+              \left[k(z,a_j^+)-k(z,a_j^-)\right]
+              \]
+            </div>
+          </article>
+          <article class="formula-card">
+            <h3>Preference field</h3>
+            <p>
+              The reward-gradient term is replaced by the feature-space dipole field.
+            </p>
+            <div class="equation">
+              \[
+              \nabla_z \log R(z)\approx
+              V_\mathrm{pref}(z)=
+              \nabla_z\log
+              R_\mathrm{dipole}(z;\mathcal{A}^+,\mathcal{A}^-)
+              \]
+            </div>
+          </article>
+          <article class="formula-card">
+            <h3>Reference drift</h3>
+            <p>
+              Mean-shift estimates compare frozen-reference features with the current batch.
+            </p>
+            <div class="equation">
+              \[
+              w_i(x;\mathcal{B})=
+              \frac{k(x,b_i)}{\sum_j k(x,b_j)},\qquad
+              \widehat{\mu}_{\mathcal{B}}(x)=
+              \sum_i w_i(x;\mathcal{B})b_i
+              \]
+              \[
+              V_\mathrm{ref}(z_i)=
+              \widehat{\mu}_{\mathcal{R}}(z_i)-
+              \widehat{\mu}_{\mathcal{Z}}(z_i)
+              \]
+            </div>
+          </article>
+          <article class="formula-card">
+            <h3>DrPO objective</h3>
+            <p>
+              The final field forms a detached feature target optimized by regression.
+            </p>
+            <div class="equation">
+              \[
+              V_\mathrm{DrPO}(z_i)=
+              V_\mathrm{pref}(z_i)+
+              \lambda V_\mathrm{ref}(z_i)
+              \]
+              \[
+              z_i^\star=
+              \operatorname{sg}\!\left(
+              z_i+\eta V_\mathrm{DrPO}(z_i)
+              \right),\qquad
+              \mathcal{L}_\mathrm{DrPO}(\theta)=
+              \frac{1}{2K}\sum_{i=1}^{K}
+              \left\|z_i-z_i^\star\right\|_2^2
+              \]
+            </div>
           </article>
         </div>
         <div class="drift-figures">
@@ -293,8 +402,8 @@
           <article>
             <h3>SD-Turbo generalization</h3>
             <p>
-              The same arxiv table set reports SD-Turbo gains from 21.88 to
-              23.49 PickScore and from 5.75 to 9.54 ImageReward on Pick-a-Pic v2.
+              On SD-Turbo, DrPO improves PickScore from 21.88 to 23.49 and
+              ImageReward from 5.75 to 9.54 on Pick-a-Pic v2.
             </p>
           </article>
           <article>
