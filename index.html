@@ -1,0 +1,1140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DrPO | Drifting Preference Optimization</title>
+    <meta
+      name="description"
+      content="Project page for Drifting Preference Optimization for One-Step Generative Models."
+    >
+    <link rel="stylesheet" href="styles.css">
+    <script>
+      window.MathJax = {
+        tex: {
+          inlineMath: [["\\(", "\\)"]],
+          displayMath: [["\\[", "\\]"]]
+        },
+        svg: {
+          fontCache: "global"
+        }
+      };
+    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="DrPO home">DrPO</a>
+      <nav aria-label="Page navigation">
+        <a href="#abstract">Abstract</a>
+        <a href="#method">Method</a>
+        <a href="#results">Results</a>
+        <a href="#qualitative">Qualitative</a>
+        <a href="#tables">Tables</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <p class="venue">Paper Project Page</p>
+        <h1>Drifting Preference Optimization for One-Step Generative Models</h1>
+        <p class="subtitle">
+          Online preference finetuning for deterministic one-step text-to-image
+          generators using reward-ranked samples, dipole preference fields, and
+          reference drift.
+        </p>
+        <p class="authors">
+          Zhou Jiang<sup>1</sup> &nbsp; Yandong Wen<sup>1</sup> &nbsp;
+          Zhen Liu<sup>2,*</sup>
+        </p>
+        <p class="affiliations">
+          <sup>1</sup>Westlake University &nbsp; <sup>2</sup>The Chinese University of Hong Kong, Shenzhen
+        </p>
+        <div class="project-links" aria-label="Project links">
+          <a href="assets/drpo-paper.pdf">Paper PDF</a>
+          <a class="is-disabled" aria-disabled="true">arXiv</a>
+          <a href="https://github.com/UGVly/DrPO">Code</a>
+        </div>
+      </section>
+
+      <section class="snapshot" aria-label="Key claims">
+        <article>
+          <strong>1-step</strong>
+          <span>inference is preserved after finetuning</span>
+        </article>
+        <article>
+          <strong>No reward gradients</strong>
+          <span>the target reward is only used for ranking</span>
+        </article>
+        <article>
+          <strong>3.51x</strong>
+          <span>HPSv3 per-update speedup over reward-gradient updates</span>
+        </article>
+        <article>
+          <strong>Black-box ready</strong>
+          <span>works with large or non-differentiable rewards</span>
+        </article>
+      </section>
+
+      <section class="teaser section-band">
+        <div class="section-heading">
+          <p>Overview</p>
+          <h2>Reward-ranked samples become a drifting field.</h2>
+        </div>
+        <div class="teaser-grid">
+          <figure class="paper-figure figure-wide">
+            <img src="assets/drpo-algorithm.webp" alt="DrPO algorithm overview with candidate generation, reward ranking, feature extraction, reference samples, and feature-space regression.">
+            <figcaption>
+              The current generator samples candidates for each prompt. A target reward
+              ranks them into positive and negative supports, and the frozen reference
+              generator supplies a stabilizing drift.
+            </figcaption>
+          </figure>
+          <figure class="paper-figure">
+            <img src="assets/drpo-trajectory.webp" alt="Qualitative samples along DrPO online finetuning trajectory.">
+            <figcaption>
+              Fixed prompts along the online finetuning trajectory show the generator
+              moving toward more preference-aligned outputs.
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section id="abstract" class="section">
+        <div class="section-heading">
+          <p>Abstract</p>
+          <h2>Preference optimization without likelihoods, denoising trajectories, or reward backpropagation.</h2>
+        </div>
+        <p class="abstract-text">
+          One-step text-to-image generators are attractive for deployment because
+          they generate an image with a single forward pass, but preference
+          finetuning them remains difficult. DrPO is an online preference-finetuning
+          method for deterministic one-step generators. For each prompt, DrPO
+          samples candidates from the current generator, ranks them with a target
+          reward, and uses high- and low-scoring samples to synthesize a
+          feature-space update direction. The update combines a non-parametric
+          dipole preference field with a reference drift estimated from the frozen
+          base generator, and is optimized through a detached feature-space
+          regression target. The target reward is used only for ranking, so DrPO
+          can optimize with large, black-box, or non-differentiable rewards while
+          inference remains a single generator call.
+        </p>
+      </section>
+
+      <section id="method" class="section section-band">
+        <div class="section-heading">
+          <p>Method</p>
+          <h2>Dipole preference drift plus reference correction.</h2>
+        </div>
+        <div class="method-grid">
+          <article>
+            <span>01</span>
+            <h3>Generate on-policy candidates</h3>
+            <p>
+              For each prompt, DrPO samples a candidate set from the current
+              one-step generator under different latent seeds.
+            </p>
+          </article>
+          <article>
+            <span>02</span>
+            <h3>Rank with the target reward</h3>
+            <p>
+              The reward model selects positive and negative supports. It does
+              not need to be differentiable through the generated image.
+            </p>
+          </article>
+          <article>
+            <span>03</span>
+            <h3>Fit toward a detached target</h3>
+            <p>
+              Preference and reference fields define a feature-space target, and
+              LoRA parameters are optimized with a regression loss.
+            </p>
+          </article>
+        </div>
+        <div class="formula-grid" aria-label="DrPO core equations">
+          <article class="formula-card formula-card-wide">
+            <h3>Reference-regularized update</h3>
+            <p>
+              DrPO starts from the feature-space pathwise gradient and replaces
+              inaccessible reward and density scores with sample-based drifting estimates.
+            </p>
+            <div class="equation">
+              \[
+              \nabla_\theta J=
+              \mathbb{E}_{\epsilon}
+              \left[
+              \left(
+              \nabla_z\log R(z)+
+              \lambda\left(
+              \nabla_z\log p_\mathrm{base}(z)-
+              \nabla_z\log p_\theta(z)
+              \right)
+              \right)
+              \nabla_\theta z
+              \right]
+              \]
+            </div>
+          </article>
+          <article class="formula-card">
+            <h3>Dipole reward</h3>
+            <p>
+              Reward-ranked samples define positive and negative feature supports.
+            </p>
+            <div class="equation">
+              \[
+              \mathcal{A}^+=\{\phi(x_j^+)\}_{j=1}^{M},\qquad
+              \mathcal{A}^-=\{\phi(x_j^-)\}_{j=1}^{M}
+              \]
+              \[
+              R_\mathrm{dipole}(z)=\exp(E(z)),\quad
+              E(z)=\gamma\sum_{j=1}^{M}
+              \left[k(z,a_j^+)-k(z,a_j^-)\right]
+              \]
+            </div>
+          </article>
+          <article class="formula-card">
+            <h3>Preference field</h3>
+            <p>
+              The reward-gradient term is replaced by the feature-space dipole field.
+            </p>
+            <div class="equation">
+              \[
+              \nabla_z \log R(z)\approx
+              V_\mathrm{pref}(z)=
+              \nabla_z\log
+              R_\mathrm{dipole}(z;\mathcal{A}^+,\mathcal{A}^-)
+              \]
+            </div>
+          </article>
+          <article class="formula-card">
+            <h3>Reference drift</h3>
+            <p>
+              Mean-shift estimates compare frozen-reference features with the current batch.
+            </p>
+            <div class="equation">
+              \[
+              w_i(x;\mathcal{B})=
+              \frac{k(x,b_i)}{\sum_j k(x,b_j)},\qquad
+              \widehat{\mu}_{\mathcal{B}}(x)=
+              \sum_i w_i(x;\mathcal{B})b_i
+              \]
+              \[
+              V_\mathrm{ref}(z_i)=
+              \widehat{\mu}_{\mathcal{R}}(z_i)-
+              \widehat{\mu}_{\mathcal{Z}}(z_i)
+              \]
+            </div>
+          </article>
+          <article class="formula-card">
+            <h3>DrPO objective</h3>
+            <p>
+              The final field forms a detached feature target optimized by regression.
+            </p>
+            <div class="equation">
+              \[
+              V_\mathrm{DrPO}(z_i)=
+              V_\mathrm{pref}(z_i)+
+              \lambda V_\mathrm{ref}(z_i)
+              \]
+              \[
+              z_i^\star=
+              \operatorname{sg}\!\left(
+              z_i+\eta V_\mathrm{DrPO}(z_i)
+              \right),\qquad
+              \mathcal{L}_\mathrm{DrPO}(\theta)=
+              \frac{1}{2K}\sum_{i=1}^{K}
+              \left\|z_i-z_i^\star\right\|_2^2
+              \]
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="results" class="section">
+        <div class="section-heading">
+          <p>Results</p>
+          <h2>DrPO gives the largest reward-gradient-free gains among one-step preference baselines.</h2>
+        </div>
+        <div class="table-wrap" role="region" aria-label="Main comparison table" tabindex="0">
+          <table>
+            <caption>
+              Results on SDXL-Turbo. PS denotes PickScore x 100 and IR denotes ImageReward x 10.
+            </caption>
+            <thead>
+              <tr>
+                <th rowspan="2">Method</th>
+                <th rowspan="2">Steps</th>
+                <th rowspan="2">Reward grad.</th>
+                <th colspan="3">Pick-a-Pic v2 Test</th>
+                <th colspan="3">Parti-Prompts</th>
+              </tr>
+              <tr>
+                <th>PS</th>
+                <th>AES</th>
+                <th>IR</th>
+                <th>PS</th>
+                <th>AES</th>
+                <th>IR</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>SDXL base</td>
+                <td>50</td>
+                <td>-</td>
+                <td>22.15</td>
+                <td>6.104</td>
+                <td>6.85</td>
+                <td>22.64</td>
+                <td>5.761</td>
+                <td>7.24</td>
+              </tr>
+              <tr>
+                <td>SDXL-DPO</td>
+                <td>50</td>
+                <td>-</td>
+                <td>22.57</td>
+                <td>6.076</td>
+                <td>9.38</td>
+                <td>22.95</td>
+                <td>5.811</td>
+                <td>10.66</td>
+              </tr>
+              <tr>
+                <td>SDXL-Turbo base</td>
+                <td>1</td>
+                <td>-</td>
+                <td>22.45</td>
+                <td>6.059</td>
+                <td>9.36</td>
+                <td>22.77</td>
+                <td>5.693</td>
+                <td>9.13</td>
+              </tr>
+              <tr>
+                <td>DRaFT</td>
+                <td>1</td>
+                <td>Yes</td>
+                <td>24.45</td>
+                <td>6.712</td>
+                <td>12.70</td>
+                <td>24.34</td>
+                <td>6.485</td>
+                <td>12.66</td>
+              </tr>
+              <tr>
+                <td>VGGFlow</td>
+                <td>1</td>
+                <td>Yes</td>
+                <td>24.27</td>
+                <td>6.490</td>
+                <td>12.19</td>
+                <td>23.98</td>
+                <td>6.200</td>
+                <td>11.40</td>
+              </tr>
+              <tr>
+                <td>DPO<sub>1step</sub></td>
+                <td>1</td>
+                <td>No</td>
+                <td>22.77</td>
+                <td>6.227</td>
+                <td>10.44</td>
+                <td>22.85</td>
+                <td>6.019</td>
+                <td>11.25</td>
+              </tr>
+              <tr>
+                <td>PSO</td>
+                <td>1</td>
+                <td>No</td>
+                <td>22.56</td>
+                <td>6.092</td>
+                <td>8.97</td>
+                <td>22.87</td>
+                <td>5.744</td>
+                <td>9.17</td>
+              </tr>
+              <tr>
+                <td>GRPO<sub>1step</sub></td>
+                <td>1</td>
+                <td>No</td>
+                <td>22.50</td>
+                <td>6.077</td>
+                <td>9.57</td>
+                <td>22.80</td>
+                <td>5.710</td>
+                <td>9.27</td>
+              </tr>
+              <tr class="highlight">
+                <td>DrPO</td>
+                <td>1</td>
+                <td>No</td>
+                <td>23.66</td>
+                <td>6.717</td>
+                <td>12.46</td>
+                <td>23.71</td>
+                <td>6.665</td>
+                <td>12.60</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="result-cards">
+          <article>
+            <h3>SDXL-Turbo main result</h3>
+            <p>
+              DrPO improves SDXL-Turbo from 22.45 to 23.66 PickScore, 6.059 to
+              6.717 AES, and 9.36 to 12.46 ImageReward on Pick-a-Pic v2.
+            </p>
+          </article>
+          <article>
+            <h3>SD-Turbo generalization</h3>
+            <p>
+              On SD-Turbo, DrPO improves PickScore from 21.88 to 23.49 and
+              ImageReward from 5.75 to 9.54 on Pick-a-Pic v2.
+            </p>
+          </article>
+          <article>
+            <h3>Large reward models</h3>
+            <p>
+              With HPSv3, DrPO removes reward-model backpropagation and reduces
+              matched-batch update time from 21.62s to 6.17s.
+            </p>
+          </article>
+        </div>
+
+        <div class="chart-grid">
+          <figure class="paper-figure">
+            <img src="assets/qwen3vl-pickapic.webp" alt="Qwen3-VL pairwise preference chart on Pick-a-Pic v2.">
+            <figcaption>Qwen3-VL pairwise preference evaluation on Pick-a-Pic v2.</figcaption>
+          </figure>
+          <figure class="paper-figure">
+            <img src="assets/qwen3vl-parti.webp" alt="Qwen3-VL pairwise preference chart on Parti-Prompts.">
+            <figcaption>Qwen3-VL pairwise preference evaluation on Parti-Prompts.</figcaption>
+          </figure>
+        </div>
+        <div class="metric-figures">
+          <figure class="paper-figure">
+            <img src="assets/reward-curves.webp" alt="Reward convergence curves for different optimization methods.">
+            <figcaption>Reward convergence curves under matched one-step finetuning.</figcaption>
+          </figure>
+          <figure class="paper-figure">
+            <img src="assets/hpsv3-profile.webp" alt="HPSv3 wall-clock evaluation curve comparing DrPO and DRaFT.">
+            <figcaption>HPSv3 optimization progresses faster without reward backpropagation.</figcaption>
+          </figure>
+          <figure class="paper-figure">
+            <img src="assets/geneval-examples.webp" alt="GenEval-style online DrPO examples for cups, clocks, sheep, and apples.">
+            <figcaption>Non-differentiable GenEval-style checks can provide ranking signals.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section id="qualitative" class="section section-band">
+        <div class="section-heading">
+          <p>Qualitative</p>
+          <h2>Matched-prompt comparisons and reward-model ablations.</h2>
+        </div>
+        <div class="qual-comparison sdxl-comparison" aria-label="SDXL-Turbo qualitative comparison">
+          <article class="qual-set">
+            <h3>A tourist is looking at a whale using binoculars</h3>
+            <div class="qual-gallery">
+              <figure>
+                <img src="assets/sdxl-qualitative/whale-sdxl-turbo.webp" alt="SDXL-Turbo result for the tourist binoculars prompt.">
+                <figcaption>SDXL-Turbo</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/whale-dpo.webp" alt="DPO result for the tourist binoculars prompt.">
+                <figcaption>DPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/whale-grpo.webp" alt="GRPO result for the tourist binoculars prompt.">
+                <figcaption>GRPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/whale-draft.webp" alt="DRaFT result for the tourist binoculars prompt.">
+                <figcaption>DRaFT</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/whale-vggflow.webp" alt="VGGFlow result for the tourist binoculars prompt.">
+                <figcaption>VGGFlow</figcaption>
+              </figure>
+              <figure class="ours">
+                <img src="assets/sdxl-qualitative/whale-drpo.webp" alt="DrPO result for the tourist binoculars prompt.">
+                <figcaption>DrPO</figcaption>
+              </figure>
+            </div>
+          </article>
+          <article class="qual-set">
+            <h3>A dolphin in an astronaut suit on Saturn</h3>
+            <div class="qual-gallery">
+              <figure>
+                <img src="assets/sdxl-qualitative/dolphin-sdxl-turbo.webp" alt="SDXL-Turbo result for the astronaut suit prompt.">
+                <figcaption>SDXL-Turbo</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/dolphin-dpo.webp" alt="DPO result for the astronaut suit prompt.">
+                <figcaption>DPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/dolphin-grpo.webp" alt="GRPO result for the astronaut suit prompt.">
+                <figcaption>GRPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/dolphin-draft.webp" alt="DRaFT result for the astronaut suit prompt.">
+                <figcaption>DRaFT</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/dolphin-vggflow.webp" alt="VGGFlow result for the astronaut suit prompt.">
+                <figcaption>VGGFlow</figcaption>
+              </figure>
+              <figure class="ours">
+                <img src="assets/sdxl-qualitative/dolphin-drpo.webp" alt="DrPO result for the astronaut suit prompt.">
+                <figcaption>DrPO</figcaption>
+              </figure>
+            </div>
+          </article>
+          <article class="qual-set">
+            <h3>A wine bottle with a lit candle in its spout</h3>
+            <div class="qual-gallery">
+              <figure>
+                <img src="assets/sdxl-qualitative/candle-sdxl-turbo.webp" alt="SDXL-Turbo result for the wine bottle candle prompt.">
+                <figcaption>SDXL-Turbo</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/candle-dpo.webp" alt="DPO result for the wine bottle candle prompt.">
+                <figcaption>DPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/candle-grpo.webp" alt="GRPO result for the wine bottle candle prompt.">
+                <figcaption>GRPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/candle-draft.webp" alt="DRaFT result for the wine bottle candle prompt.">
+                <figcaption>DRaFT</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/candle-vggflow.webp" alt="VGGFlow result for the wine bottle candle prompt.">
+                <figcaption>VGGFlow</figcaption>
+              </figure>
+              <figure class="ours">
+                <img src="assets/sdxl-qualitative/candle-drpo.webp" alt="DrPO result for the wine bottle candle prompt.">
+                <figcaption>DrPO</figcaption>
+              </figure>
+            </div>
+          </article>
+          <article class="qual-set">
+            <h3>Subway train with lobsters reading newspaper</h3>
+            <div class="qual-gallery">
+              <figure>
+                <img src="assets/sdxl-qualitative/lobster-sdxl-turbo.webp" alt="SDXL-Turbo result for the subway train prompt.">
+                <figcaption>SDXL-Turbo</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/lobster-dpo.webp" alt="DPO result for the subway train prompt.">
+                <figcaption>DPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/lobster-grpo.webp" alt="GRPO result for the subway train prompt.">
+                <figcaption>GRPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/lobster-draft.webp" alt="DRaFT result for the subway train prompt.">
+                <figcaption>DRaFT</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sdxl-qualitative/lobster-vggflow.webp" alt="VGGFlow result for the subway train prompt.">
+                <figcaption>VGGFlow</figcaption>
+              </figure>
+              <figure class="ours">
+                <img src="assets/sdxl-qualitative/lobster-drpo.webp" alt="DrPO result for the subway train prompt.">
+                <figcaption>DrPO</figcaption>
+              </figure>
+            </div>
+          </article>
+        </div>
+        <div class="qual-comparison" aria-label="SD-Turbo qualitative comparison">
+          <article class="qual-set">
+            <h3>Burger with wheels speeding on the race track, supercharged, detailed, hyperrealistic, 4K</h3>
+            <div class="qual-gallery">
+              <figure>
+                <img src="assets/sd-turbo-qualitative/burger-sd-turbo.webp" alt="SD-Turbo result for the burger racer prompt.">
+                <figcaption>SD-Turbo</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/burger-dpo.webp" alt="DPO result for the burger racer prompt.">
+                <figcaption>DPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/burger-draft.webp" alt="DRaFT result for the burger racer prompt.">
+                <figcaption>DRaFT</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/burger-vggflow.webp" alt="VGGFlow result for the burger racer prompt.">
+                <figcaption>VGGFlow</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/burger-pso.webp" alt="PSO result for the burger racer prompt.">
+                <figcaption>PSO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/burger-grpo.webp" alt="GRPO result for the burger racer prompt.">
+                <figcaption>GRPO</figcaption>
+              </figure>
+              <figure class="ours">
+                <img src="assets/sd-turbo-qualitative/burger-drpo.webp" alt="DrPO result for the burger racer prompt.">
+                <figcaption>DrPO</figcaption>
+              </figure>
+            </div>
+          </article>
+          <article class="qual-set">
+            <h3>A toy poodle</h3>
+            <div class="qual-gallery">
+              <figure>
+                <img src="assets/sd-turbo-qualitative/poodle-sd-turbo.webp" alt="SD-Turbo result for the toy poodle prompt.">
+                <figcaption>SD-Turbo</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/poodle-dpo.webp" alt="DPO result for the toy poodle prompt.">
+                <figcaption>DPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/poodle-draft.webp" alt="DRaFT result for the toy poodle prompt.">
+                <figcaption>DRaFT</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/poodle-vggflow.webp" alt="VGGFlow result for the toy poodle prompt.">
+                <figcaption>VGGFlow</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/poodle-pso.webp" alt="PSO result for the toy poodle prompt.">
+                <figcaption>PSO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/poodle-grpo.webp" alt="GRPO result for the toy poodle prompt.">
+                <figcaption>GRPO</figcaption>
+              </figure>
+              <figure class="ours">
+                <img src="assets/sd-turbo-qualitative/poodle-drpo.webp" alt="DrPO result for the toy poodle prompt.">
+                <figcaption>DrPO</figcaption>
+              </figure>
+            </div>
+          </article>
+          <article class="qual-set">
+            <h3>Mystical forest with glowing mushrooms and a babbling brook</h3>
+            <div class="qual-gallery">
+              <figure>
+                <img src="assets/sd-turbo-qualitative/forest-sd-turbo.webp" alt="SD-Turbo result for the mystical forest prompt.">
+                <figcaption>SD-Turbo</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/forest-dpo.webp" alt="DPO result for the mystical forest prompt.">
+                <figcaption>DPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/forest-draft.webp" alt="DRaFT result for the mystical forest prompt.">
+                <figcaption>DRaFT</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/forest-vggflow.webp" alt="VGGFlow result for the mystical forest prompt.">
+                <figcaption>VGGFlow</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/forest-pso.webp" alt="PSO result for the mystical forest prompt.">
+                <figcaption>PSO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/forest-grpo.webp" alt="GRPO result for the mystical forest prompt.">
+                <figcaption>GRPO</figcaption>
+              </figure>
+              <figure class="ours">
+                <img src="assets/sd-turbo-qualitative/forest-drpo.webp" alt="DrPO result for the mystical forest prompt.">
+                <figcaption>DrPO</figcaption>
+              </figure>
+            </div>
+          </article>
+          <article class="qual-set">
+            <h3>A spaceship pointing up on a plain background</h3>
+            <div class="qual-gallery">
+              <figure>
+                <img src="assets/sd-turbo-qualitative/spaceship-sd-turbo.webp" alt="SD-Turbo result for the spaceship prompt.">
+                <figcaption>SD-Turbo</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/spaceship-dpo.webp" alt="DPO result for the spaceship prompt.">
+                <figcaption>DPO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/spaceship-draft.webp" alt="DRaFT result for the spaceship prompt.">
+                <figcaption>DRaFT</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/spaceship-vggflow.webp" alt="VGGFlow result for the spaceship prompt.">
+                <figcaption>VGGFlow</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/spaceship-pso.webp" alt="PSO result for the spaceship prompt.">
+                <figcaption>PSO</figcaption>
+              </figure>
+              <figure>
+                <img src="assets/sd-turbo-qualitative/spaceship-grpo.webp" alt="GRPO result for the spaceship prompt.">
+                <figcaption>GRPO</figcaption>
+              </figure>
+              <figure class="ours">
+                <img src="assets/sd-turbo-qualitative/spaceship-drpo.webp" alt="DrPO result for the spaceship prompt.">
+                <figcaption>DrPO</figcaption>
+              </figure>
+            </div>
+          </article>
+        </div>
+        <figure class="paper-figure full">
+          <img src="assets/reward-model-matrix.webp" alt="Qualitative comparison across different target reward models.">
+          <figcaption>
+            Swapping the target reward changes the optimized behavior while the
+            same drifting update is reused.
+          </figcaption>
+        </figure>
+      </section>
+
+      <section id="tables" class="section">
+        <div class="section-heading tables-heading">
+          <h2>Extended quantitative results.</h2>
+        </div>
+
+        <h3 class="table-group-title">SD-Turbo transfer</h3>
+        <div class="table-wrap" role="region" aria-label="SD-Turbo comparison table" tabindex="0">
+          <table>
+            <caption>
+              Results on SD-Turbo. PS denotes PickScore x 100 and IR denotes ImageReward x 10.
+            </caption>
+            <thead>
+              <tr>
+                <th rowspan="2">Method</th>
+                <th rowspan="2">Steps</th>
+                <th rowspan="2">Reward grad.</th>
+                <th colspan="3">Pick-a-Pic v2 Test</th>
+                <th colspan="3">Parti-Prompts</th>
+              </tr>
+              <tr>
+                <th>PS</th>
+                <th>AES</th>
+                <th>IR</th>
+                <th>PS</th>
+                <th>AES</th>
+                <th>IR</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>SD1.5</td>
+                <td>50</td>
+                <td>-</td>
+                <td>20.79</td>
+                <td>5.455</td>
+                <td>1.22</td>
+                <td>21.49</td>
+                <td>5.358</td>
+                <td>2.25</td>
+              </tr>
+              <tr>
+                <td>LCM-SD1.5</td>
+                <td>4</td>
+                <td>-</td>
+                <td>20.50</td>
+                <td>5.497</td>
+                <td>-3.08</td>
+                <td>21.15</td>
+                <td>5.396</td>
+                <td>-1.94</td>
+              </tr>
+              <tr>
+                <td>SD2.1</td>
+                <td>50</td>
+                <td>-</td>
+                <td>21.09</td>
+                <td>5.645</td>
+                <td>2.49</td>
+                <td>21.77</td>
+                <td>5.547</td>
+                <td>3.97</td>
+              </tr>
+              <tr>
+                <td>SD-Turbo base</td>
+                <td>1</td>
+                <td>-</td>
+                <td>21.88</td>
+                <td>6.054</td>
+                <td>5.75</td>
+                <td>22.29</td>
+                <td>5.758</td>
+                <td>5.37</td>
+              </tr>
+              <tr>
+                <td>DRaFT</td>
+                <td>1</td>
+                <td>Yes</td>
+                <td>24.69</td>
+                <td>6.820</td>
+                <td>9.63</td>
+                <td>23.07</td>
+                <td>6.516</td>
+                <td>7.72</td>
+              </tr>
+              <tr>
+                <td>VGGFlow</td>
+                <td>1</td>
+                <td>Yes</td>
+                <td>23.73</td>
+                <td>6.378</td>
+                <td>7.74</td>
+                <td>22.99</td>
+                <td>6.027</td>
+                <td>6.50</td>
+              </tr>
+              <tr>
+                <td>DPO<sub>1step</sub></td>
+                <td>1</td>
+                <td>No</td>
+                <td>22.02</td>
+                <td>6.080</td>
+                <td>5.95</td>
+                <td>22.39</td>
+                <td>5.793</td>
+                <td>5.21</td>
+              </tr>
+              <tr>
+                <td>PSO</td>
+                <td>1</td>
+                <td>No</td>
+                <td>21.88</td>
+                <td>6.059</td>
+                <td>5.80</td>
+                <td>22.29</td>
+                <td>5.763</td>
+                <td>5.42</td>
+              </tr>
+              <tr>
+                <td>GRPO<sub>1step</sub></td>
+                <td>1</td>
+                <td>No</td>
+                <td>21.98</td>
+                <td>6.077</td>
+                <td>6.08</td>
+                <td>22.35</td>
+                <td>5.779</td>
+                <td>5.65</td>
+              </tr>
+              <tr class="highlight">
+                <td>DrPO</td>
+                <td>1</td>
+                <td>No</td>
+                <td>23.49</td>
+                <td>6.485</td>
+                <td>9.54</td>
+                <td>22.99</td>
+                <td>6.284</td>
+                <td>7.46</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="table-group-title">Efficiency and robustness</h3>
+        <div class="extended-table-grid">
+          <div class="table-wrap compact-table" role="region" aria-label="HPSv3 efficiency table" tabindex="0">
+            <table>
+              <caption>Efficiency comparison on HPSv3.</caption>
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>DRaFT</th>
+                  <th>DrPO</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Reward grad.</td>
+                  <td>Yes</td>
+                  <td>No</td>
+                </tr>
+                <tr>
+                  <td>Effective batch</td>
+                  <td>192</td>
+                  <td>192</td>
+                </tr>
+                <tr>
+                  <td>Update time (s)</td>
+                  <td>21.62</td>
+                  <td>6.17</td>
+                </tr>
+                <tr>
+                  <td>Speedup</td>
+                  <td>1.00x</td>
+                  <td>3.51x</td>
+                </tr>
+                <tr>
+                  <td>Backward (s)</td>
+                  <td>9.99</td>
+                  <td>0.34</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-table" role="region" aria-label="GenEval table" tabindex="0">
+            <table>
+              <caption>GenEval task performance.</caption>
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>SD-Turbo</th>
+                  <th>+DrPO</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Single</td>
+                  <td>98.8</td>
+                  <td>100.0</td>
+                </tr>
+                <tr>
+                  <td>Two</td>
+                  <td>46.5</td>
+                  <td>55.6</td>
+                </tr>
+                <tr>
+                  <td>Count</td>
+                  <td>33.8</td>
+                  <td>42.5</td>
+                </tr>
+                <tr>
+                  <td>Colors</td>
+                  <td>83.8</td>
+                  <td>87.2</td>
+                </tr>
+                <tr>
+                  <td>Position</td>
+                  <td>8.0</td>
+                  <td>13.0</td>
+                </tr>
+                <tr>
+                  <td>Color Attr.</td>
+                  <td>9.0</td>
+                  <td>13.0</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-table wide-table" role="region" aria-label="Reference objective table" tabindex="0">
+            <table>
+              <caption>Reference-objective comparison on Pick-a-Pic v2.</caption>
+              <thead>
+                <tr>
+                  <th>Objective</th>
+                  <th>PickScore</th>
+                  <th>CLIP</th>
+                  <th>AES</th>
+                  <th>HPSv2</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>No reference</td>
+                  <td>23.55</td>
+                  <td>25.88</td>
+                  <td>6.603</td>
+                  <td>34.85</td>
+                </tr>
+                <tr>
+                  <td>Perceptual loss</td>
+                  <td>23.42</td>
+                  <td>25.98</td>
+                  <td>6.455</td>
+                  <td>34.90</td>
+                </tr>
+                <tr class="highlight">
+                  <td>Ref. drift loss</td>
+                  <td>23.49</td>
+                  <td>26.22</td>
+                  <td>6.485</td>
+                  <td>35.07</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <h3 class="table-group-title">Ablations</h3>
+        <div class="ablation-grid">
+          <div class="table-wrap compact-table" role="region" aria-label="Candidate count ablation table" tabindex="0">
+            <table>
+              <caption>Batch generation.</caption>
+              <thead>
+                <tr>
+                  <th>Candidates</th>
+                  <th>PS</th>
+                  <th>AES</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>SD-Turbo</td>
+                  <td>21.88</td>
+                  <td>6.054</td>
+                </tr>
+                <tr>
+                  <td>K=16</td>
+                  <td>23.24</td>
+                  <td>6.409</td>
+                </tr>
+                <tr>
+                  <td>K=24</td>
+                  <td>23.53</td>
+                  <td>6.552</td>
+                </tr>
+                <tr class="highlight">
+                  <td>K=32</td>
+                  <td>23.57</td>
+                  <td>6.599</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-table" role="region" aria-label="Feature map ablation table" tabindex="0">
+            <table>
+              <caption>Feature map.</caption>
+              <thead>
+                <tr>
+                  <th>Feature</th>
+                  <th>PS</th>
+                  <th>AES</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>SD-Turbo</td>
+                  <td>21.88</td>
+                  <td>6.054</td>
+                </tr>
+                <tr class="highlight">
+                  <td>latent-MAE<sub>1</sub></td>
+                  <td>23.55</td>
+                  <td>6.513</td>
+                </tr>
+                <tr>
+                  <td>latent-MAE<sub>2</sub></td>
+                  <td>23.50</td>
+                  <td>6.526</td>
+                </tr>
+                <tr>
+                  <td>latent-MAE<sub>3</sub></td>
+                  <td>23.48</td>
+                  <td>6.506</td>
+                </tr>
+                <tr>
+                  <td>Latent</td>
+                  <td>20.52</td>
+                  <td>4.543</td>
+                </tr>
+                <tr>
+                  <td>VAE-dec. + DINOv2</td>
+                  <td>22.28</td>
+                  <td>6.252</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-table" role="region" aria-label="Kernel ablation table" tabindex="0">
+            <table>
+              <caption>Kernel.</caption>
+              <thead>
+                <tr>
+                  <th>Kernel</th>
+                  <th>PS</th>
+                  <th>AES</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>SD-Turbo</td>
+                  <td>21.88</td>
+                  <td>6.054</td>
+                </tr>
+                <tr class="highlight">
+                  <td>Cosine</td>
+                  <td>23.63</td>
+                  <td>6.509</td>
+                </tr>
+                <tr>
+                  <td>RBF</td>
+                  <td>23.50</td>
+                  <td>6.590</td>
+                </tr>
+                <tr>
+                  <td>Exponential</td>
+                  <td>23.53</td>
+                  <td>6.594</td>
+                </tr>
+                <tr>
+                  <td>Laplacian</td>
+                  <td>23.51</td>
+                  <td>6.515</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap compact-table" role="region" aria-label="Velocity scale ablation table" tabindex="0">
+            <table>
+              <caption>Velocity scale eta.</caption>
+              <thead>
+                <tr>
+                  <th>Weight</th>
+                  <th>PS</th>
+                  <th>AES</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>SD-Turbo</td>
+                  <td>21.88</td>
+                  <td>6.054</td>
+                </tr>
+                <tr>
+                  <td>eta=1000</td>
+                  <td>23.51</td>
+                  <td>6.510</td>
+                </tr>
+                <tr class="highlight">
+                  <td>eta=3000</td>
+                  <td>23.53</td>
+                  <td>6.542</td>
+                </tr>
+                <tr>
+                  <td>eta=5000</td>
+                  <td>23.51</td>
+                  <td>6.485</td>
+                </tr>
+                <tr>
+                  <td>eta=10000</td>
+                  <td>23.46</td>
+                  <td>6.444</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <footer>
+      <p>* Corresponding author.</p>
+    </footer>
+  </body>
+</html>
