@@ -127,14 +127,11 @@
         </div>
         <div class="method-showcase">
           <figure class="paper-figure method-figure">
-            <span class="method-diagram-scroll">
-              <img src="assets/drpo-method-diagram.svg" alt="DrPO method diagram with on-policy reward ranking, reference samples, frozen feature space, DrPO vector field, detached target, and regression loss.">
-            </span>
+            <img src="assets/drpo-algorithm.webp" alt="DrPO algorithm overview with candidate generation, reward ranking, feature extraction, reference samples, and feature-space regression.">
             <figcaption>
-              DrPO ranks on-policy candidates with a preference reward, embeds
-              positive, negative, and reference samples in a frozen feature
-              space, then regresses the generator toward a detached
-              preference-plus-reference target.
+              DrPO turns reward-ranked on-policy samples into a feature-space
+              update, with frozen-reference samples providing a stabilizing
+              drift.
             </figcaption>
           </figure>
         </div>

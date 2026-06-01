@@ -322,11 +322,6 @@ h3 {
   width: 100%;
 }
 
-.method-diagram-scroll {
-  display: block;
-  overflow-x: auto;
-}
-
 .method-figure img {
   display: block;
   width: 100%;
@@ -581,10 +576,6 @@ footer p {
   .section {
     padding-top: 52px;
     padding-bottom: 52px;
-  }
-
-  .method-figure img {
-    width: 860px;
   }
 
   .qual-gallery {
