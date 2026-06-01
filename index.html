@@ -55,6 +55,27 @@
           <a class="is-disabled" aria-disabled="true">arXiv</a>
           <a href="https://github.com/UGVly/DrPO">Code</a>
         </div>
+        <figure class="hero-teaser">
+          <div class="teaser-comparison" aria-label="SD-Turbo baseline outputs compared with DrPO optimized outputs">
+            <div class="teaser-column">
+              <span>SD-Turbo</span>
+              <img src="assets/sd-turbo-qualitative/burger-sd-turbo.webp" alt="SD-Turbo output for the burger race car prompt.">
+              <img src="assets/sd-turbo-qualitative/poodle-sd-turbo.webp" alt="SD-Turbo output for the toy poodle prompt.">
+              <img src="assets/sd-turbo-qualitative/forest-sd-turbo.webp" alt="SD-Turbo output for the mystical forest prompt.">
+              <img src="assets/sd-turbo-qualitative/spaceship-sd-turbo.webp" alt="SD-Turbo output for the spaceship prompt.">
+            </div>
+            <div class="teaser-column is-after">
+              <span>After DrPO</span>
+              <img src="assets/sd-turbo-qualitative/burger-drpo.webp" alt="DrPO optimized output for the burger race car prompt.">
+              <img src="assets/sd-turbo-qualitative/poodle-drpo.webp" alt="DrPO optimized output for the toy poodle prompt.">
+              <img src="assets/sd-turbo-qualitative/forest-drpo.webp" alt="DrPO optimized output for the mystical forest prompt.">
+              <img src="assets/sd-turbo-qualitative/spaceship-drpo.webp" alt="DrPO optimized output for the spaceship prompt.">
+            </div>
+          </div>
+          <figcaption>
+            Matched prompts before and after DrPO preference optimization, while preserving one-step generation.
+          </figcaption>
+        </figure>
       </section>
 
       <section class="snapshot" aria-label="Key claims">
@@ -74,30 +95,6 @@
           <strong>Black-box ready</strong>
           <span>works with large or non-differentiable rewards</span>
         </article>
-      </section>
-
-      <section class="teaser section-band">
-        <div class="section-heading">
-          <p>Overview</p>
-          <h2>Reward-ranked samples become a drifting field.</h2>
-        </div>
-        <div class="teaser-grid">
-          <figure class="paper-figure figure-wide">
-            <img src="assets/drpo-algorithm.webp" alt="DrPO algorithm overview with candidate generation, reward ranking, feature extraction, reference samples, and feature-space regression.">
-            <figcaption>
-              The current generator samples candidates for each prompt. A target reward
-              ranks them into positive and negative supports, and the frozen reference
-              generator supplies a stabilizing drift.
-            </figcaption>
-          </figure>
-          <figure class="paper-figure">
-            <img src="assets/drpo-trajectory.webp" alt="Qualitative samples along DrPO online finetuning trajectory.">
-            <figcaption>
-              Fixed prompts along the online finetuning trajectory show the generator
-              moving toward more preference-aligned outputs.
-            </figcaption>
-          </figure>
-        </div>
       </section>
 
       <section id="abstract" class="section">
@@ -152,99 +149,30 @@
             </p>
           </article>
         </div>
-        <div class="formula-grid" aria-label="DrPO core equations">
-          <article class="formula-card formula-card-wide">
-            <h3>Reference-regularized update</h3>
+        <div class="method-showcase">
+          <figure class="paper-figure method-figure">
+            <img src="assets/drpo-algorithm.webp" alt="DrPO algorithm overview with candidate generation, reward ranking, feature extraction, reference samples, and feature-space regression.">
+            <figcaption>
+              DrPO turns reward-ranked on-policy samples into a feature-space
+              update, with frozen-reference samples providing a stabilizing drift.
+            </figcaption>
+          </figure>
+          <article class="compact-equation">
+            <h3>Core target</h3>
             <p>
-              DrPO starts from the feature-space pathwise gradient and replaces
-              inaccessible reward and density scores with sample-based drifting estimates.
-            </p>
-            <div class="equation">
-              \[
-              \nabla_\theta J=
-              \mathbb{E}_{\epsilon}
-              \left[
-              \left(
-              \nabla_z\log R(z)+
-              \lambda\left(
-              \nabla_z\log p_\mathrm{base}(z)-
-              \nabla_z\log p_\theta(z)
-              \right)
-              \right)
-              \nabla_\theta z
-              \right]
-              \]
-            </div>
-          </article>
-          <article class="formula-card">
-            <h3>Dipole reward</h3>
-            <p>
-              Reward-ranked samples define positive and negative feature supports.
-            </p>
-            <div class="equation">
-              \[
-              \mathcal{A}^+=\{\phi(x_j^+)\}_{j=1}^{M},\qquad
-              \mathcal{A}^-=\{\phi(x_j^-)\}_{j=1}^{M}
-              \]
-              \[
-              R_\mathrm{dipole}(z)=\exp(E(z)),\quad
-              E(z)=\gamma\sum_{j=1}^{M}
-              \left[k(z,a_j^+)-k(z,a_j^-)\right]
-              \]
-            </div>
-          </article>
-          <article class="formula-card">
-            <h3>Preference field</h3>
-            <p>
-              The reward-gradient term is replaced by the feature-space dipole field.
-            </p>
-            <div class="equation">
-              \[
-              \nabla_z \log R(z)\approx
-              V_\mathrm{pref}(z)=
-              \nabla_z\log
-              R_\mathrm{dipole}(z;\mathcal{A}^+,\mathcal{A}^-)
-              \]
-            </div>
-          </article>
-          <article class="formula-card">
-            <h3>Reference drift</h3>
-            <p>
-              Mean-shift estimates compare frozen-reference features with the current batch.
-            </p>
-            <div class="equation">
-              \[
-              w_i(x;\mathcal{B})=
-              \frac{k(x,b_i)}{\sum_j k(x,b_j)},\qquad
-              \widehat{\mu}_{\mathcal{B}}(x)=
-              \sum_i w_i(x;\mathcal{B})b_i
-              \]
-              \[
-              V_\mathrm{ref}(z_i)=
-              \widehat{\mu}_{\mathcal{R}}(z_i)-
-              \widehat{\mu}_{\mathcal{Z}}(z_i)
-              \]
-            </div>
-          </article>
-          <article class="formula-card">
-            <h3>DrPO objective</h3>
-            <p>
-              The final field forms a detached feature target optimized by regression.
+              A detached feature target combines the preference field with
+              reference drift, then trains LoRA parameters by regression.
             </p>
             <div class="equation">
               \[
               V_\mathrm{DrPO}(z_i)=
               V_\mathrm{pref}(z_i)+
-              \lambda V_\mathrm{ref}(z_i)
+              \lambda V_\mathrm{ref}(z_i),\quad
+              z_i^\star=\operatorname{sg}\!\left(z_i+\eta V_\mathrm{DrPO}(z_i)\right)
               \]
               \[
-              z_i^\star=
-              \operatorname{sg}\!\left(
-              z_i+\eta V_\mathrm{DrPO}(z_i)
-              \right),\qquad
               \mathcal{L}_\mathrm{DrPO}(\theta)=
-              \frac{1}{2K}\sum_{i=1}^{K}
-              \left\|z_i-z_i^\star\right\|_2^2
+              \frac{1}{2K}\sum_{i=1}^{K}\left\|z_i-z_i^\star\right\|_2^2
               \]
             </div>
           </article>
