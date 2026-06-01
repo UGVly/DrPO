@@ -320,14 +320,25 @@ h3 {
 
 .method-figure {
   width: 100%;
+  padding: clamp(14px, 2vw, 24px);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
 }
 
 .method-figure img {
   display: block;
-  width: 100%;
+  width: min(100%, 1040px);
   max-width: none;
+  margin: 0 auto;
+  border: 0;
+  border-radius: 6px;
   min-height: 0;
   box-shadow: none;
+}
+
+.method-figure figcaption {
+  margin-top: 16px;
 }
 
 .table-wrap {
