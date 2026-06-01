@@ -9,18 +9,6 @@
       content="Project page for Drifting Preference Optimization for One-Step Generative Models."
     >
     <link rel="stylesheet" href="styles.css">
-    <script>
-      window.MathJax = {
-        tex: {
-          inlineMath: [["\\(", "\\)"]],
-          displayMath: [["\\[", "\\]"]]
-        },
-        svg: {
-          fontCache: "global"
-        }
-      };
-    </script>
-    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
   </head>
   <body>
     <header class="site-header">
@@ -139,31 +127,16 @@
         </div>
         <div class="method-showcase">
           <figure class="paper-figure method-figure">
-            <img src="assets/drpo-algorithm.webp" alt="DrPO algorithm overview with candidate generation, reward ranking, feature extraction, reference samples, and feature-space regression.">
+            <span class="method-diagram-scroll">
+              <img src="assets/drpo-method-diagram.svg" alt="DrPO method diagram with on-policy reward ranking, reference samples, frozen feature space, DrPO vector field, detached target, and regression loss.">
+            </span>
             <figcaption>
-              DrPO turns reward-ranked on-policy samples into a feature-space
-              update, with frozen-reference samples providing a stabilizing drift.
+              DrPO ranks on-policy candidates with a preference reward, embeds
+              positive, negative, and reference samples in a frozen feature
+              space, then regresses the generator toward a detached
+              preference-plus-reference target.
             </figcaption>
           </figure>
-          <article class="compact-equation">
-            <h3>Core target</h3>
-            <p>
-              A detached feature target combines the preference field with
-              reference drift, then trains LoRA parameters by regression.
-            </p>
-            <div class="equation">
-              \[
-              V_\mathrm{DrPO}(z_i)=
-              V_\mathrm{pref}(z_i)+
-              \lambda V_\mathrm{ref}(z_i),\quad
-              z_i^\star=\operatorname{sg}\!\left(z_i+\eta V_\mathrm{DrPO}(z_i)\right)
-              \]
-              \[
-              \mathcal{L}_\mathrm{DrPO}(\theta)=
-              \frac{1}{2K}\sum_{i=1}^{K}\left\|z_i-z_i^\star\right\|_2^2
-              \]
-            </div>
-          </article>
         </div>
       </section>
 

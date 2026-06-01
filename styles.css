@@ -315,52 +315,24 @@ h3 {
 }
 
 .method-showcase {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.78fr);
-  gap: 18px;
-  margin: 24px 0;
-  align-items: stretch;
+  margin: 24px 0 0;
 }
 
 .method-figure {
-  display: flex;
-  flex-direction: column;
+  width: 100%;
+}
+
+.method-diagram-scroll {
+  display: block;
+  overflow-x: auto;
 }
 
 .method-figure img {
-  flex: 1;
-  min-height: 390px;
-  object-fit: contain;
-}
-
-.compact-equation {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 22px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-}
-
-.compact-equation p {
-  margin-bottom: 12px;
-  color: var(--muted);
-}
-
-.equation {
-  overflow-x: auto;
-  padding: 14px 16px;
-  border: 1px solid #e6ecef;
-  border-radius: 8px;
-  background: #f9fbfb;
-  color: var(--ink);
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-.equation mjx-container[jax="SVG"] {
-  min-width: max-content;
+  display: block;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  box-shadow: none;
 }
 
 .table-wrap {
@@ -594,7 +566,6 @@ footer p {
 
   .snapshot,
   .method-grid,
-  .method-showcase,
   .result-cards,
   .extended-table-grid,
   .ablation-grid,
@@ -613,7 +584,7 @@ footer p {
   }
 
   .method-figure img {
-    min-height: 0;
+    width: 860px;
   }
 
   .qual-gallery {
