@@ -169,44 +169,18 @@ h1 {
   margin: 38px auto 0;
 }
 
-.teaser-comparison {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--line);
-  box-shadow: var(--shadow);
+.hero-teaser picture {
+  display: block;
 }
 
-.teaser-column {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1px;
-  background: var(--line);
-}
-
-.teaser-column span {
-  grid-column: 1 / -1;
-  padding: 11px 14px;
-  background: #fff;
-  color: var(--muted);
-  font-size: 14px;
-  font-weight: 850;
-  text-align: center;
-}
-
-.teaser-column.is-after span {
-  color: var(--green);
-}
-
-.teaser-column img {
+.hero-teaser img {
   display: block;
   width: 100%;
-  aspect-ratio: 1;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   background: #fff;
-  object-fit: cover;
+  box-shadow: var(--shadow);
 }
 
 .snapshot {
@@ -659,10 +633,6 @@ footer p {
 
   .project-links a {
     width: 100%;
-  }
-
-  .teaser-column {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .snapshot article,
