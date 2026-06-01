@@ -318,6 +318,10 @@ h3 {
   margin: 24px 0 0;
 }
 
+.method-showcase + .method-grid {
+  margin-top: 22px;
+}
+
 .method-figure {
   width: 100%;
   padding: clamp(14px, 2vw, 24px);
