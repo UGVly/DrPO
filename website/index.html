@@ -99,6 +99,16 @@
           <p>Method</p>
           <h2>Dipole preference drift plus reference correction.</h2>
         </div>
+        <div class="method-showcase">
+          <figure class="paper-figure method-figure">
+            <img src="assets/drpo-algorithm.webp" alt="DrPO algorithm overview with candidate generation, reward ranking, feature extraction, reference samples, and feature-space regression.">
+            <figcaption>
+              DrPO turns reward-ranked on-policy samples into a feature-space
+              update, with frozen-reference samples providing a stabilizing
+              drift.
+            </figcaption>
+          </figure>
+        </div>
         <div class="method-grid">
           <article>
             <span>01</span>
@@ -124,16 +134,6 @@
               LoRA parameters are optimized with a regression loss.
             </p>
           </article>
-        </div>
-        <div class="method-showcase">
-          <figure class="paper-figure method-figure">
-            <img src="assets/drpo-algorithm.webp" alt="DrPO algorithm overview with candidate generation, reward ranking, feature extraction, reference samples, and feature-space regression.">
-            <figcaption>
-              DrPO turns reward-ranked on-policy samples into a feature-space
-              update, with frozen-reference samples providing a stabilizing
-              drift.
-            </figcaption>
-          </figure>
         </div>
       </section>
 
@@ -1025,5 +1025,13 @@
     <footer>
       <p>* Corresponding author.</p>
     </footer>
+    <script>
+      window.addEventListener("load", () => {
+        const id = window.location.hash.slice(1);
+        if (!id) return;
+        const target = document.getElementById(id);
+        if (target) target.scrollIntoView();
+      });
+    </script>
   </body>
 </html>
