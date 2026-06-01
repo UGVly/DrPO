@@ -328,7 +328,7 @@ h3 {
 
 .method-figure img {
   display: block;
-  width: min(100%, 1040px);
+  width: min(100%, 940px);
   max-width: none;
   margin: 0 auto;
   border: 0;
