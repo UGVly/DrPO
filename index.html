@@ -103,9 +103,12 @@
           <figure class="paper-figure method-figure">
             <img src="assets/drpo-method-overview.webp" alt="DrPO method overview with a feature-space drift field and fixed-prompt samples across finetuning steps.">
             <figcaption>
-              Left: reward-ranked samples and reference drift synthesize a
-              detached feature-space target. Right: fixed prompts along online
-              finetuning move toward preference-aligned generations.
+              Left: DrPO constructs a detached feature-space target for each
+              on-policy sample. High-reward samples attract, low-reward samples
+              repel, and frozen-reference samples provide a stabilizing drift
+              toward the base generator; the combined field yields the target
+              update. Right: fixed prompts sampled along online finetuning show
+              the generator moving toward more preference-aligned outputs.
             </figcaption>
           </figure>
         </div>
