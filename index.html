@@ -56,22 +56,10 @@
           <a href="https://github.com/UGVly/DrPO">Code</a>
         </div>
         <figure class="hero-teaser">
-          <div class="teaser-comparison" aria-label="SD-Turbo baseline outputs compared with DrPO optimized outputs">
-            <div class="teaser-column">
-              <span>SD-Turbo</span>
-              <img src="assets/sd-turbo-qualitative/burger-sd-turbo.webp" alt="SD-Turbo output for the burger race car prompt.">
-              <img src="assets/sd-turbo-qualitative/poodle-sd-turbo.webp" alt="SD-Turbo output for the toy poodle prompt.">
-              <img src="assets/sd-turbo-qualitative/forest-sd-turbo.webp" alt="SD-Turbo output for the mystical forest prompt.">
-              <img src="assets/sd-turbo-qualitative/spaceship-sd-turbo.webp" alt="SD-Turbo output for the spaceship prompt.">
-            </div>
-            <div class="teaser-column is-after">
-              <span>After DrPO</span>
-              <img src="assets/sd-turbo-qualitative/burger-drpo.webp" alt="DrPO optimized output for the burger race car prompt.">
-              <img src="assets/sd-turbo-qualitative/poodle-drpo.webp" alt="DrPO optimized output for the toy poodle prompt.">
-              <img src="assets/sd-turbo-qualitative/forest-drpo.webp" alt="DrPO optimized output for the mystical forest prompt.">
-              <img src="assets/sd-turbo-qualitative/spaceship-drpo.webp" alt="DrPO optimized output for the spaceship prompt.">
-            </div>
-          </div>
+          <picture>
+            <source media="(max-width: 560px)" srcset="assets/hero-teaser-mobile.webp">
+            <img src="assets/hero-teaser.webp" alt="Matched SD-Turbo to DrPO examples for text-to-image prompts.">
+          </picture>
           <figcaption>
             Matched prompts before and after DrPO preference optimization, while preserving one-step generation.
           </figcaption>
