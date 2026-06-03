@@ -159,11 +159,6 @@ h1 {
   color: #fff;
 }
 
-.project-links .is-disabled {
-  opacity: 0.58;
-  cursor: default;
-}
-
 .hero-teaser {
   width: min(980px, 100%);
   margin: 38px auto 0;
